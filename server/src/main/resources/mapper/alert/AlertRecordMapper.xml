@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.alert.mapper.AlertRecordMapper">
+    <resultMap id="AlertRecordResultMap" type="cloide.server.module.alert.entity.AlertRecordEntity">
+        <id column="id" property="id"/>
+        <result column="rule_id" property="ruleId"/>
+        <result column="server_id" property="serverId"/>
+        <result column="metric" property="metric"/>
+        <result column="current_value" property="currentValue"/>
+        <result column="threshold_value" property="thresholdValue"/>
+        <result column="level" property="level"/>
+        <result column="status" property="status"/>
+        <result column="message" property="message"/>
+        <result column="read_by" property="readBy"/>
+        <result column="read_at" property="readAt"/>
+        <result column="triggered_at" property="triggeredAt"/>
+        <result column="resolved_at" property="resolvedAt"/>
+        <result column="notified_at" property="notifiedAt"/>
+        <result column="notify_channels" property="notifyChannels"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <sql id="RecordColumns">id, rule_id, server_id, metric, current_value, threshold_value, level, status,
+        message, read_by, read_at, triggered_at, resolved_at, notified_at, notify_channels, created_at, updated_at</sql>
+    <insert id="insertRecord" useGeneratedKeys="true" keyProperty="record.id">
+        INSERT INTO alert_records (rule_id, server_id, metric, current_value, threshold_value, level, status, message, triggered_at)
+        VALUES (#{record.ruleId}, #{record.serverId}, #{record.metric}, #{record.currentValue},
+            #{record.thresholdValue}, #{record.level}, #{record.status}, #{record.message}, #{record.triggeredAt})
+    </insert>
+    <select id="selectRecordById" resultMap="AlertRecordResultMap">
+        SELECT <include refid="RecordColumns"/> FROM alert_records
+        WHERE id = #{id}
+    </select>
+    <update id="updateStatusToRead">
+        UPDATE alert_records
+        SET status = 'read', read_by = #{readBy}, read_at = #{readAt}
+        WHERE id = #{id} AND status = 'unread'
+    </update>
+    <update id="updateStatusToResolved">
+        UPDATE alert_records
+        SET status = 'resolved', resolved_at = #{resolvedAt}
+        WHERE id = #{id} AND status != 'resolved'
+    </update>
+    <update id="updateNotifiedInfo">
+        UPDATE alert_records
+        SET notified_at = #{notifiedAt},
+            notify_channels = #{notifyChannels}
+        WHERE id = #{id}
+    </update>
+    <select id="selectRecords" resultMap="AlertRecordResultMap">
+        SELECT <include refid="RecordColumns"/> FROM alert_records
+        <where>
+            <if test="serverId != null">AND server_id = #{serverId}</if>
+            <if test="status != null and status != ''">AND status = #{status}</if>
+        </where>
+        ORDER BY triggered_at DESC, id DESC
+    </select>
+</mapper>

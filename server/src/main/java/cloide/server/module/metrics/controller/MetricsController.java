@@ -1,0 +1,137 @@
+package cloide.server.module.metrics.controller;
+
+import cloide.server.common.BusinessException;
+import cloide.server.common.ErrorCode;
+import cloide.server.common.vo.PageResult;
+import cloide.server.module.metrics.service.MetricsService;
+import cloide.server.module.metrics.vo.MetricsHistoryVo;
+import cloide.server.module.metrics.vo.MetricsLatestVo;
+import cloide.server.module.metrics.vo.ProcessSnapshotVo;
+import cloide.server.module.metrics.vo.ServerResourcesSnapshotVo;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
+import java.time.OffsetDateTime;
+import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/** 提供固定宽表 Metrics 的最新值和历史分页查询接口。 */
+@Tag(name = "servers", description = "Secure server inventory management")
+@RestController
+@RequestMapping("/api/servers")
+@Validated
+@RequiredArgsConstructor
+public class MetricsController {
+
+    private final MetricsService metricsService;
+
+    /** 查询服务器最新指标。 */
+    // 生成 OpenAPI 端点文档，summary/description/operationId 与 openapi-server.json 的 getLatestMetrics 操作对齐。
+    // 契约未提供 description，按 VO 语义补写。指标查询任意已认证用户可访问，声明 Bearer JWT 认证。
+    @Operation(
+            summary = "Get latest fixed-width metrics",
+            description = "Returns the latest fixed-width metrics row for a server, "
+                    + "including CPU, memory, disk, network, temperature and load average. "
+                    + "Authenticated users only.",
+            operationId = "getLatestMetrics",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Latest metrics"),
+            @ApiResponse(responseCode = "401", description = "Bearer JWT is missing, invalid, expired, or no longer authorized (40100)"),
+            @ApiResponse(responseCode = "404", description = "Server does not exist or has been deleted (40400)")
+    })
+    @GetMapping("/{id}/metrics/latest")
+    public cloide.server.common.ApiResponse<MetricsLatestVo> latest(
+            @Parameter(description = "Server ID.")
+            @PathVariable("id") @Positive Long serverId) {
+        return cloide.server.common.ApiResponse.success(metricsService.latest(serverId));
+    }
+
+    /** 查询服务器新鲜窗口内的实时 Top 进程快照。 */
+    @Operation(
+            summary = "Get latest in-memory top-process snapshot",
+            description = "Returns the latest in-memory top-process snapshot for a server within the "
+                    + "90-second freshness window, ranked by CPU and memory usage. Never persisted; "
+                    + "404 when the Agent has not reported process data recently. Authenticated users only.",
+            operationId = "getLatestProcesses",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Latest top-process snapshot (90-second freshness window)"),
+            @ApiResponse(responseCode = "401", description = "Bearer JWT is missing, invalid, expired, or no longer authorized (40100)"),
+            @ApiResponse(responseCode = "404", description = "Server does not exist, or no fresh process snapshot exists (40400)")
+    })
+    @GetMapping("/{id}/processes/latest")
+    public cloide.server.common.ApiResponse<ProcessSnapshotVo> latestProcesses(
+            @Parameter(description = "Server ID.")
+            @PathVariable("id") @Positive Long serverId) {
+        return cloide.server.common.ApiResponse.success(
+                metricsService.latestProcessSnapshot(serverId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
+    }
+
+    /** 查询服务器新鲜窗口内的实时磁盘/网卡扩展资源快照。 */
+    @Operation(
+            summary = "Get latest in-memory per-disk and per-nic resource snapshot",
+            description = "Returns the latest in-memory per-disk and per-nic resource snapshot for a server "
+                    + "within the 90-second freshness window. Never persisted; 404 when the Agent has not "
+                    + "reported resource data recently. Authenticated users only.",
+            operationId = "getLatestResources",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Latest extended-resource snapshot (90-second freshness window)"),
+            @ApiResponse(responseCode = "401", description = "Bearer JWT is missing, invalid, expired, or no longer authorized (40100)"),
+            @ApiResponse(responseCode = "404", description = "Server does not exist, or no fresh resource snapshot exists (40400)")
+    })
+    @GetMapping("/{id}/resources/latest")
+    public cloide.server.common.ApiResponse<ServerResourcesSnapshotVo> latestResources(
+            @Parameter(description = "Server ID.")
+            @PathVariable("id") @Positive Long serverId) {
+        return cloide.server.common.ApiResponse.success(
+                metricsService.latestResources(serverId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
+    }
+
+    /** 查询服务器历史指标。 */
+    // 生成 OpenAPI 端点文档，summary/description/operationId 与 openapi-server.json 的 getMetricsHistory 操作对齐。
+    // 契约未提供 description，按 VO 语义补写。指标查询任意已认证用户可访问，声明 Bearer JWT 认证。
+    @Operation(
+            summary = "Get historical fixed-width metrics",
+            description = "Returns paginated historical fixed-width metrics for a server within the "
+                    + "[start_time, end_time] range, newest first. Authenticated users only.",
+            operationId = "getMetricsHistory",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Metrics page"),
+            @ApiResponse(responseCode = "400", description = "Invalid request parameter (40002)"),
+            @ApiResponse(responseCode = "401", description = "Bearer JWT is missing, invalid, expired, or no longer authorized (40100)"),
+            @ApiResponse(responseCode = "404", description = "Server does not exist or has been deleted (40400)")
+    })
+    @GetMapping("/{id}/metrics")
+    public cloide.server.common.ApiResponse<PageResult<MetricsHistoryVo>> history(
+            @Parameter(description = "Server ID.")
+            @PathVariable("id") @Positive Long serverId,
+            @Parameter(description = "Start of the query window (inclusive), ISO-8601 date-time.",
+                    required = true)
+            @RequestParam("start_time") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime startTime,
+            @Parameter(description = "End of the query window (inclusive), ISO-8601 date-time.",
+                    required = true)
+            @RequestParam("end_time") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime endTime,
+            @Parameter(description = "One-based page number.")
+            @RequestParam(value = "page", defaultValue = "1") @Min(1) Integer page,
+            @Parameter(description = "Number of items per page.")
+            @RequestParam(value = "page_size", defaultValue = "20") @Min(1) @Max(100) Integer pageSize) {
+        return cloide.server.common.ApiResponse.success(metricsService.history(serverId, startTime, endTime, page, pageSize));
+    }
+}

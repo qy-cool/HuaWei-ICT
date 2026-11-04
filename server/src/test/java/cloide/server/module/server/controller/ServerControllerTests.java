@@ -1,0 +1,823 @@
+package cloide.server.module.server.controller;
+
+import static org.hamcrest.Matchers.blankOrNullString;
+import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import cloide.server.common.BusinessException;
+import cloide.server.common.ErrorCode;
+import cloide.server.common.vo.PageResult;
+import cloide.server.module.auth.entity.UserEntity;
+import cloide.server.module.auth.mapper.AuthBootstrapStateMapper;
+import cloide.server.module.auth.mapper.UserMapper;
+import cloide.server.module.server.dto.CreateServerRequest;
+import cloide.server.module.server.dto.ServerQueryRequest;
+import cloide.server.module.server.dto.UpdateServerRequest;
+import cloide.server.module.server.mapper.ServerMapper;
+import cloide.server.module.server.mapper.SshTestHistoryMapper;
+import cloide.server.module.metrics.mapper.MetricsMapper;
+import cloide.server.module.metrics.outbox.OutboxMapper;
+import cloide.server.module.metrics.mapper.MetricsCleanupMapper;
+import cloide.server.module.alert.mapper.AlertNotificationCleanupMapper;
+import cloide.server.module.metrics.outbox.OutboxCleanupMapper;
+import cloide.server.module.metrics.mapper.IngestionCleanupMapper;
+import cloide.server.module.server.service.ServerService;
+import cloide.server.module.server.service.ServerSshService;
+import cloide.server.module.server.vo.ServerStatusVo;
+import cloide.server.module.server.vo.ServerVo;
+import cloide.server.module.server.vo.SshHostKeyObservationVo;
+import cloide.server.module.server.vo.SshHostKeyVo;
+import cloide.server.module.server.vo.SshTestHistoryVo;
+import cloide.server.module.server.vo.SshTestVo;
+import cloide.server.security.JwtTokenService;
+import cloide.server.module.alert.mapper.AlertNotificationMapper;
+import cloide.server.module.alert.mapper.AlertRuleMapper;
+import cloide.server.module.alert.consume.ConsumeRecordMapper;
+import cloide.server.module.alert.consume.ConsumeRecordCleanupMapper;
+import cloide.server.module.alert.mapper.AlertRecordMapper;
+import cloide.server.module.alert.mapper.AlertRecordCleanupMapper;
+import cloide.server.module.alert.mapper.AlertStateMapper;
+import cloide.server.module.terminal.mapper.TerminalSessionMapper;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.stream.Stream;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
+
+/**
+ * 验证服务器 Controller 的八个接口契约、权限边界、参数校验和统一异常响应。
+ */
+@ActiveProfiles("test")
+@SpringBootTest(properties = {
+        "spring.autoconfigure.exclude="
+                + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
+                + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration"
+})
+@AutoConfigureMockMvc
+class ServerControllerTests {
+
+    private static final String ADMIN_TOKEN = "admin-token";
+    private static final String USER_TOKEN = "user-token";
+    private static final String AUTHORIZATION = "Authorization";
+    private static final String ADMIN_BEARER = "Bearer " + ADMIN_TOKEN;
+    private static final String USER_BEARER = "Bearer " + USER_TOKEN;
+    private static final String JSON_CONTENT_TYPE = "application/json";
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private ServerService serverService;
+
+    // 使用模拟 SSH 服务隔离 Controller 测试与网络、凭据解密和数据库写入。
+    @MockitoBean
+    private ServerSshService serverSshService;
+
+    @MockitoBean
+    private ServerMapper serverMapper;
+
+    // 替代全局 Mapper 扫描注册的 SSH 测试历史 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private SshTestHistoryMapper sshTestHistoryMapper;
+
+    @MockitoBean
+    private MetricsMapper metricsMapper;
+
+    @MockitoBean
+    private MetricsCleanupMapper metricsCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的指标幂等接收记录清理 Mapper。
+    @MockitoBean
+    private IngestionCleanupMapper ingestionCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的 Outbox 清理 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private OutboxCleanupMapper outboxCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的通知投递清理 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private AlertNotificationCleanupMapper alertNotificationCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的消费幂等记录清理 Mapper。
+    @MockitoBean
+    private ConsumeRecordCleanupMapper consumeRecordCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的告警记录清理 Mapper。
+    @MockitoBean
+    private AlertRecordCleanupMapper alertRecordCleanupMapper;
+
+
+    // 使用模拟告警 Mapper，避免告警模块 Mapper 扫描后创建真实 MyBatis 会话依赖。
+    @MockitoBean
+    private AlertRuleMapper alertRuleMapper;
+
+    @MockitoBean
+    private AlertRecordMapper alertRecordMapper;
+    @MockitoBean
+    private AlertNotificationMapper alertNotificationMapper;
+
+    @MockitoBean
+    private AlertStateMapper alertStateMapper;
+
+    // 使用模拟终端 Mapper，避免 V12 Mapper 扫描后创建真实 MyBatis 会话依赖。
+    @MockitoBean
+    private TerminalSessionMapper terminalSessionMapper;
+
+    @MockitoBean
+    private PlatformTransactionManager transactionManager;
+
+    @MockitoBean
+    private UserMapper userMapper;
+
+    // 提供初始化状态 Mapper 替身，避免测试上下文加载真实 MyBatis 依赖。
+    @MockitoBean
+    private AuthBootstrapStateMapper authBootstrapStateMapper;
+
+    // 提供系统就绪检查所需的数据源替身，避免排除数据库自动配置后缺少 Bean。
+    @MockitoBean
+    private DataSource dataSource;
+
+    @MockitoBean
+    private JwtTokenService jwtTokenService;
+    @MockitoBean
+    private OutboxMapper outboxMapper;
+    @MockitoBean
+    private ConsumeRecordMapper consumeRecordMapper;
+
+
+    /**
+     * 验证管理员可成功调用创建、列表、详情、更新、删除和状态六个接口。
+     */
+    @Test
+    void adminShouldAccessAllSixEndpoints() throws Exception {
+        authenticateAdmin();
+        ServerVo server = serverVo();
+        PageResult<ServerVo> pageResult = pageResult(server);
+        ServerStatusVo statusVo = statusVo();
+        when(serverService.create(any(CreateServerRequest.class))).thenReturn(server);
+        when(serverService.list(any(ServerQueryRequest.class))).thenReturn(pageResult);
+        when(serverService.get(1L)).thenReturn(server);
+        when(serverService.existsActive(1L)).thenReturn(true);
+        when(serverService.update(any(Long.class), any(UpdateServerRequest.class))).thenReturn(server);
+        when(serverService.status(1L)).thenReturn(statusVo);
+
+        mockMvc.perform(post("/api/servers")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(createBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.ssh_host").value("10.0.0.1"))
+                .andExpect(jsonPath("$.data.ssh_port").value(22))
+                .andExpect(jsonPath("$.data.ssh_auth_type").value("password"))
+                .andExpect(jsonPath("$.data.ssh_password").doesNotExist())
+                .andExpect(jsonPath("$.data.ssh_private_key").doesNotExist())
+                .andExpect(jsonPath("$.data.ssh_private_key_passphrase").doesNotExist());
+
+        mockMvc.perform(get("/api/servers")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .header("X-Correlation-ID", "server-list-1")
+                        .param("page", "2")
+                        .param("page_size", "10")
+                        .param("keyword", "production")
+                        .param("sort_by", "created_at")
+                        .param("sort_order", "asc"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(header().string("X-Correlation-ID", "server-list-1"))
+                .andExpect(jsonPath("$.data.page_size").value(10))
+                .andExpect(jsonPath("$.data.items[0].agent_status").value("online"))
+                .andExpect(jsonPath("$.data.items[0].sshPasswordEncrypted").doesNotExist());
+
+        mockMvc.perform(get("/api/servers/1").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(1));
+
+        mockMvc.perform(put("/api/servers/1")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(updateBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("production"));
+
+        mockMvc.perform(delete("/api/servers/1").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        mockMvc.perform(get("/api/servers/1/status").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.server_id").value(1))
+                .andExpect(jsonPath("$.data.checked_at").isNotEmpty());
+
+        ArgumentCaptor<CreateServerRequest> createCaptor = ArgumentCaptor.forClass(CreateServerRequest.class);
+        verify(serverService).create(createCaptor.capture());
+        assertEquals("10.0.0.1", createCaptor.getValue().getSshHost());
+        assertEquals("secret", createCaptor.getValue().getSshPassword());
+
+        ArgumentCaptor<ServerQueryRequest> queryCaptor = ArgumentCaptor.forClass(ServerQueryRequest.class);
+        verify(serverService).list(queryCaptor.capture());
+        assertEquals(2, queryCaptor.getValue().getPage());
+        assertEquals(10, queryCaptor.getValue().getPageSize());
+        assertEquals("production", queryCaptor.getValue().getKeyword());
+        assertEquals("created_at", queryCaptor.getValue().getSortBy());
+        assertEquals("asc", queryCaptor.getValue().getSortOrder());
+        verify(serverService).get(1L);
+        verify(serverService).update(any(Long.class), any(UpdateServerRequest.class));
+        verify(serverService).delete(1L);
+        verify(serverService).status(1L);
+    }
+
+    /**
+     * 验证已审核普通用户可读取列表、详情和状态三个 GET 接口。
+     */
+    @Test
+    void approvedUserShouldAccessThreeGetEndpoints() throws Exception {
+        authenticateUser();
+        ServerVo server = serverVo();
+        when(serverService.list(any(ServerQueryRequest.class))).thenReturn(pageResult(server));
+        when(serverService.get(1L)).thenReturn(server);
+        when(serverService.status(1L)).thenReturn(statusVo());
+
+        mockMvc.perform(get("/api/servers").header(AUTHORIZATION, USER_BEARER))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/servers/1").header(AUTHORIZATION, USER_BEARER))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/servers/1/status").header(AUTHORIZATION, USER_BEARER))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * 验证普通用户的创建、更新和删除请求均由安全链拒绝为 403。
+     */
+    @Test
+    void approvedUserShouldReceiveForbiddenForAllWrites() throws Exception {
+        authenticateUser();
+
+        mockMvc.perform(post("/api/servers")
+                        .header(AUTHORIZATION, USER_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(createBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+        mockMvc.perform(put("/api/servers/1")
+                        .header(AUTHORIZATION, USER_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(updateBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+        mockMvc.perform(delete("/api/servers/1").header(AUTHORIZATION, USER_BEARER))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+    }
+
+    /**
+     * 验证六个服务器接口缺少 Token 时均返回统一 401 响应。
+     */
+    @Test
+    void allEndpointsWithoutTokenShouldReturnUnauthorized() throws Exception {
+        RequestBuilder[] requests = {
+                post("/api/servers").contentType(JSON_CONTENT_TYPE).content(createBody()),
+                get("/api/servers"),
+                get("/api/servers/1"),
+                put("/api/servers/1").contentType(JSON_CONTENT_TYPE).content(updateBody()),
+                delete("/api/servers/1"),
+                get("/api/servers/1/status")
+        };
+
+        for (RequestBuilder request : requests) {
+            mockMvc.perform(request)
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(40100));
+        }
+    }
+
+    /**
+     * 验证非正数路径 ID 在进入 Service 前返回统一参数错误。
+     */
+    @Test
+    void invalidIdShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(get("/api/servers/0").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+    }
+
+    /** 验证 DELETE 路径上的非正数 ID 在进入 Service 前返回参数错误。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1"})
+    void deletingInvalidIdShouldReturnBadRequest(String serverId) throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(delete("/api/servers/" + serverId)
+                        .header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002))
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())));
+
+        verify(serverService, never()).delete(any(Long.class));
+    }
+
+    /** 验证删除不存在资源时返回统一 404 响应。 */
+    @Test
+    void deletingMissingServerShouldReturnNotFound() throws Exception {
+        authenticateAdmin();
+        doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_FOUND))
+                .when(serverService).delete(99L);
+
+        mockMvc.perform(delete("/api/servers/99")
+                        .header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400))
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())));
+    }
+
+    /**
+     * 验证不在白名单中的排序字段返回统一参数错误。
+     */
+    @Test
+    void invalidSortShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(get("/api/servers")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .param("sort_by", "ssh_password"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+    }
+
+    /** 验证非法排序方向在进入 Service 前返回统一参数错误。 */
+    @Test
+    void invalidSortOrderShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(get("/api/servers")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .param("sort_order", "ascending"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+
+        verify(serverService, never()).list(any(ServerQueryRequest.class));
+    }
+
+    /** 验证未传排序参数时使用稳定的 id 降序默认值。 */
+    @Test
+    void missingSortParametersShouldUseDefaults() throws Exception {
+        authenticateAdmin();
+        when(serverService.list(any(ServerQueryRequest.class))).thenReturn(pageResult(serverVo()));
+
+        mockMvc.perform(get("/api/servers").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ServerQueryRequest> captor = ArgumentCaptor.forClass(ServerQueryRequest.class);
+        verify(serverService).list(captor.capture());
+        assertEquals("id", captor.getValue().getSortBy());
+        assertEquals("desc", captor.getValue().getSortOrder());
+    }
+
+    /** 验证所有公开排序字段均能从 HTTP 参数传递到 Service。 */
+    @ParameterizedTest
+    @MethodSource("sortFields")
+    void whitelistedSortFieldsShouldReachService(String sortBy) throws Exception {
+        authenticateAdmin();
+        when(serverService.list(any(ServerQueryRequest.class))).thenReturn(pageResult(serverVo()));
+
+        mockMvc.perform(get("/api/servers")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .param("sort_by", sortBy)
+                        .param("sort_order", "asc"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ServerQueryRequest> captor = ArgumentCaptor.forClass(ServerQueryRequest.class);
+        verify(serverService).list(captor.capture());
+        assertEquals(sortBy, captor.getValue().getSortBy());
+        assertEquals("asc", captor.getValue().getSortOrder());
+    }
+
+    /** 提供 REST 契约声明的排序字段白名单。 */
+    private static Stream<Arguments> sortFields() {
+        return Stream.of("id", "name", "host", "status", "created_at", "updated_at")
+                .map(Arguments::of);
+    }
+
+    /**
+     * 验证无法解析的创建 JSON 返回统一参数错误。
+     */
+    @Test
+    void malformedJsonShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(post("/api/servers")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content("{malformed-json}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+    }
+
+    /**
+     * 验证 Service 的资源不存在异常映射为统一 404 响应。
+     */
+    @Test
+    void missingServerShouldReturnNotFound() throws Exception {
+        authenticateAdmin();
+        when(serverService.get(99L)).thenThrow(new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        mockMvc.perform(get("/api/servers/99").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    /** 验证更新接口先检查资源存在性，再决定是否校验请求体。 */
+    @Test
+    void updateMissingServerShouldReturnNotFoundBeforeBodyValidation() throws Exception {
+        authenticateAdmin();
+        when(serverService.existsActive(99L)).thenReturn(false);
+
+        mockMvc.perform(put("/api/servers/99")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content("{\"description\":\"probe\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+
+        verify(serverService).existsActive(99L);
+        verify(serverService, never()).update(any(Long.class), any(UpdateServerRequest.class));
+    }
+
+    /** 验证有效服务器的非法更新请求仍返回参数错误。 */
+    @Test
+    void updateActiveServerWithInvalidBodyShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+        when(serverService.existsActive(1L)).thenReturn(true);
+
+        mockMvc.perform(put("/api/servers/1")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content("{\"description\":\"probe\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+
+        verify(serverService).existsActive(1L);
+        verify(serverService, never()).update(any(Long.class), any(UpdateServerRequest.class));
+    }
+
+    /**
+     * 验证 Service 的资源冲突异常映射为统一 409 响应。
+     */
+    @Test
+    void conflictingDeleteShouldReturnConflict() throws Exception {
+        authenticateAdmin();
+        doThrow(new BusinessException(ErrorCode.RESOURCE_CONFLICT)).when(serverService).delete(1L);
+
+        mockMvc.perform(delete("/api/servers/1").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(40900));
+    }
+
+    /** 验证管理员可调用两个 SSH 接口，身份 ID 被透传且响应包含请求追踪头。 */
+    @Test
+    void adminShouldAccessBothSshEndpoints() throws Exception {
+        authenticateAdmin();
+        when(serverSshService.updateHostKey(eq(1L), any(), eq(1L))).thenReturn(sshHostKeyVo());
+        when(serverSshService.testConnection(1L)).thenReturn(sshTestVo());
+
+        mockMvc.perform(put("/api/servers/1/ssh/host-key")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(hostKeyBody()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.operation").value("confirmed"))
+                .andExpect(jsonPath("$.data.server_id").value(1))
+                .andExpect(jsonPath("$.data.host_key_algorithm").value("ssh-ed25519"))
+                .andExpect(jsonPath("$.data.verified_at").isNotEmpty());
+
+        mockMvc.perform(post("/api/servers/1/ssh/test")
+                        .header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.connected").value(true))
+                .andExpect(jsonPath("$.data.server_id").value(1))
+                .andExpect(jsonPath("$.data.auth_type").value("password"))
+                .andExpect(jsonPath("$.data.duration_ms").value(12))
+                .andExpect(jsonPath("$.data.tested_at").isNotEmpty());
+
+        verify(serverSshService).updateHostKey(eq(1L), any(), eq(1L));
+        verify(serverSshService).testConnection(1L);
+    }
+
+    /** 验证已审核普通用户调用两个 SSH 管理接口均返回 40300。 */
+    @Test
+    void approvedUserShouldReceiveForbiddenForBothSshEndpoints() throws Exception {
+        authenticateUser();
+        RequestBuilder[] requests = {
+                put("/api/servers/1/ssh/host-key")
+                        .header(AUTHORIZATION, USER_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(hostKeyBody()),
+                post("/api/servers/1/ssh/test").header(AUTHORIZATION, USER_BEARER)
+        };
+
+        for (RequestBuilder request : requests) {
+            mockMvc.perform(request)
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value(40300));
+        }
+    }
+
+    /** 验证两个 SSH 接口缺少 Token 时均返回统一 40100。 */
+    @Test
+    void sshEndpointsWithoutTokenShouldReturnUnauthorized() throws Exception {
+        RequestBuilder[] requests = {
+                put("/api/servers/1/ssh/host-key")
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(hostKeyBody()),
+                post("/api/servers/1/ssh/test")
+        };
+
+        for (RequestBuilder request : requests) {
+            mockMvc.perform(request)
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(40100));
+        }
+    }
+
+    /** 验证不符合 OpenSSH SHA-256 格式的指纹返回参数错误且不调用 Service。 */
+    @Test
+    void invalidSshFingerprintShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(put("/api/servers/1/ssh/host-key")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content("{\"expected_fingerprint\":\"MD5:invalid\",\"replace\":false}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+
+        verify(serverSshService, never()).updateHostKey(any(), any(), any());
+    }
+
+    /** 验证 SSH 测试接口拒绝契约未定义的 JSON 请求体且不调用 Service。 */
+    @Test
+    void sshTestRequestBodyShouldReturnBadRequest() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(post("/api/servers/1/ssh/test")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(40002));
+
+        verify(serverSshService, never()).testConnection(any());
+    }
+
+    /** 验证 SSH 凭据认证失败映射为 50003 和 HTTP 502。 */
+    @Test
+    void sshAuthenticationFailureShouldReturnBadGateway() throws Exception {
+        authenticateAdmin();
+        doThrow(new BusinessException(ErrorCode.SSH_AUTHENTICATION_FAILED))
+                .when(serverSshService).testConnection(1L);
+
+        mockMvc.perform(post("/api/servers/1/ssh/test")
+                        .header(AUTHORIZATION, ADMIN_BEARER)
+                        .contentType(JSON_CONTENT_TYPE)
+                        .content(""))
+                .andExpect(status().isBadGateway())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(50003));
+    }
+
+    /** 验证 SSH 测试历史接口返回最近记录列表（成功记录含公钥信息）。 */
+    @Test
+    void sshTestHistoryShouldReturnRecords() throws Exception {
+        authenticateAdmin();
+        SshTestHistoryVo history = new SshTestHistoryVo();
+        history.setServerId(1L);
+        history.setConnected(true);
+        history.setErrorCode(null);
+        history.setHostKeyAlgorithm("ssh-ed25519");
+        history.setHostKeyFingerprint("SHA256:test");
+        history.setAuthType("password");
+        history.setDurationMs(25L);
+        history.setTestedAt(OffsetDateTime.now());
+        when(serverSshService.listTestHistory(1L)).thenReturn(List.of(history));
+
+        mockMvc.perform(get("/api/servers/1/ssh/test/history")
+                        .header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].server_id").value(1))
+                .andExpect(jsonPath("$.data[0].connected").value(true))
+                .andExpect(jsonPath("$.data[0].error_code").doesNotExist())
+                .andExpect(jsonPath("$.data[0].duration_ms").value(25));
+
+        verify(serverSshService).listTestHistory(1L);
+    }
+
+    /** 验证未认证访问 SSH 测试历史返回 40100。 */
+    @Test
+    void sshTestHistoryWithoutAuthShouldReturnUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/servers/1/ssh/test/history"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+
+        verify(serverSshService, never()).listTestHistory(any());
+    }
+
+    /** 验证观察主机公钥接口返回目标主机当前公钥。 */
+    @Test
+    void observeSshHostKeyShouldReturnObservedKey() throws Exception {
+        authenticateAdmin();
+        SshHostKeyObservationVo observation = new SshHostKeyObservationVo();
+        observation.setServerId(1L);
+        observation.setHostKeyAlgorithm("ssh-ed25519");
+        observation.setHostKeyFingerprint("SHA256:test");
+        observation.setObservedAt(OffsetDateTime.now());
+        when(serverSshService.observeHostKey(1L)).thenReturn(observation);
+
+        mockMvc.perform(post("/api/servers/1/ssh/host-key/observe")
+                        .header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.server_id").value(1))
+                .andExpect(jsonPath("$.data.host_key_algorithm").value("ssh-ed25519"))
+                .andExpect(jsonPath("$.data.host_key_fingerprint").value("SHA256:test"));
+
+        verify(serverSshService).observeHostKey(1L);
+    }
+
+    /** 验证未认证访问观察主机公钥返回 40100。 */
+    @Test
+    void observeSshHostKeyWithoutAuthShouldReturnUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/servers/1/ssh/host-key/observe"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+
+        verify(serverSshService, never()).observeHostKey(any());
+    }
+
+    /** 配置管理员 JWT 和数据库最新状态回查。 */
+    private void authenticateAdmin() {
+        when(jwtTokenService.parseToken(ADMIN_TOKEN))
+                .thenReturn(new JwtTokenService.ParsedToken(1L, "admin", "admin-token-id", java.time.Instant.parse("2026-08-18T00:00:00Z")));
+        when(userMapper.selectAuthenticationUserById(1L)).thenReturn(authenticationUser(1L, "admin", "admin"));
+    }
+
+    /** 配置已审核普通用户 JWT 和数据库最新状态回查。 */
+    private void authenticateUser() {
+        when(jwtTokenService.parseToken(USER_TOKEN))
+                .thenReturn(new JwtTokenService.ParsedToken(2L, "approved_user", "user-token-id", java.time.Instant.parse("2026-08-18T00:00:00Z")));
+        when(userMapper.selectAuthenticationUserById(2L))
+                .thenReturn(authenticationUser(2L, "approved_user", "user"));
+    }
+
+    /** 创建安全过滤器回查使用的已审核用户实体。 */
+    private UserEntity authenticationUser(Long id, String username, String role) {
+        UserEntity user = new UserEntity();
+        user.setId(id);
+        user.setUsername(username);
+        user.setRole(role);
+        user.setReviewStatus("approved");
+        user.setCreatedAt(LocalDateTime.now());
+        return user;
+    }
+
+    /** 创建不含凭据字段的服务器公开响应。 */
+    private ServerVo serverVo() {
+        ServerVo server = new ServerVo();
+        server.setId(1L);
+        server.setName("production");
+        server.setHost("10.0.0.1");
+        server.setDescription("production server");
+        server.setStatus("online");
+        server.setSshHost("10.0.0.1");
+        server.setSshPort(22);
+        server.setSshUser("root");
+        server.setSshAuthType("password");
+        server.setAgentId("agent-1");
+        server.setAgentStatus("online");
+        server.setLastHeartbeatAt(OffsetDateTime.now());
+        server.setCreatedAt(OffsetDateTime.now());
+        server.setUpdatedAt(OffsetDateTime.now());
+        return server;
+    }
+
+    /** 创建服务器列表分页响应。 */
+    private PageResult<ServerVo> pageResult(ServerVo server) {
+        PageResult<ServerVo> result = new PageResult<>();
+        result.setItems(List.of(server));
+        result.setTotal(1L);
+        result.setPage(2);
+        result.setPageSize(10);
+        return result;
+    }
+
+    /** 创建服务器状态快照响应。 */
+    private ServerStatusVo statusVo() {
+        ServerStatusVo result = new ServerStatusVo();
+        result.setServerId(1L);
+        result.setStatus("online");
+        result.setAgentStatus("online");
+        result.setLastHeartbeatAt(OffsetDateTime.now());
+        result.setCheckedAt(OffsetDateTime.now());
+        return result;
+    }
+
+    /** 创建主机公钥确认接口使用的非敏感响应。 */
+    private SshHostKeyVo sshHostKeyVo() {
+        SshHostKeyVo result = new SshHostKeyVo();
+        result.setServerId(1L);
+        result.setHostKeyAlgorithm("ssh-ed25519");
+        result.setHostKeyFingerprint("SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        result.setOperation("confirmed");
+        result.setVerifiedAt(OffsetDateTime.now());
+        return result;
+    }
+
+    /** 创建 SSH 连接测试接口使用的非敏感响应。 */
+    private SshTestVo sshTestVo() {
+        SshTestVo result = new SshTestVo();
+        result.setServerId(1L);
+        result.setConnected(true);
+        result.setHostKeyAlgorithm("ssh-ed25519");
+        result.setHostKeyFingerprint("SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        result.setAuthType("password");
+        result.setDurationMs(12L);
+        result.setTestedAt(OffsetDateTime.now());
+        return result;
+    }
+
+    /** 返回使用 snake_case 字段的合法创建 JSON。 */
+    private String createBody() {
+        return """
+                {
+                  "name": "production",
+                  "host": "10.0.0.1",
+                  "description": "production server",
+                  "ssh_host": "10.0.0.1",
+                  "ssh_port": 22,
+                  "ssh_user": "root",
+                  "ssh_auth_type": "password",
+                  "ssh_password": "secret"
+                }
+                """;
+    }
+
+    /** 返回使用 snake_case 字段的合法全量更新 JSON。 */
+    private String updateBody() {
+        return """
+                {
+                  "name": "production",
+                  "host": "10.0.0.1",
+                  "description": "production server",
+                  "ssh_host": "10.0.0.1",
+                  "ssh_port": 22,
+                  "ssh_user": "root",
+                  "ssh_auth_type": "password"
+                }
+                """;
+    }
+
+    /** 返回使用 snake_case 字段的合法主机公钥确认 JSON。 */
+    private String hostKeyBody() {
+        return """
+                {
+                  "expected_fingerprint": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "replace": false
+                }
+                """;
+    }
+}

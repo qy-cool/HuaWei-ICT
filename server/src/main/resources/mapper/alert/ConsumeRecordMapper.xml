@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.alert.consume.ConsumeRecordMapper">
+    <resultMap id="ConsumeRecordResultMap" type="cloide.server.module.alert.consume.ConsumeRecordEntity">
+        <id column="id" property="id"/>
+        <result column="consumer" property="consumer"/>
+        <result column="event_id" property="eventId"/>
+        <result column="status" property="status"/>
+        <result column="attempts" property="attempts"/>
+        <result column="last_error" property="lastError"/>
+        <result column="consumed_at" property="consumedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <sql id="ConsumeRecordColumns">id, consumer, event_id, status, attempts, last_error,
+        consumed_at, created_at, updated_at</sql>
+    <insert id="upsertConsumed" useGeneratedKeys="true" keyProperty="record.id">
+        INSERT INTO message_consume_records (consumer, event_id, status, attempts, consumed_at)
+        VALUES (#{record.consumer}, #{record.eventId}, #{record.status}, #{record.attempts}, #{record.consumedAt})
+        ON DUPLICATE KEY UPDATE
+            status = 'consumed',
+            attempts = 0,
+            last_error = NULL,
+            consumed_at = VALUES(consumed_at)
+    </insert>
+    <select id="existsConsumed" resultType="boolean">
+        SELECT COUNT(1) > 0 FROM message_consume_records
+        WHERE consumer = #{consumer} AND event_id = #{eventId} AND status = 'consumed'
+    </select>
+    <insert id="upsertFailed">
+        INSERT INTO message_consume_records (consumer, event_id, status, attempts, last_error, consumed_at)
+        VALUES (#{consumer}, #{eventId}, 'failed', #{attempts}, #{lastError}, NULL)
+        ON DUPLICATE KEY UPDATE
+            status = 'failed',
+            attempts = VALUES(attempts),
+            last_error = VALUES(last_error),
+            consumed_at = NULL
+    </insert>
+    <select id="countByConsumerAndStatus" resultType="java.util.HashMap">
+        SELECT consumer AS consumer, COUNT(*) AS count
+        FROM message_consume_records
+        WHERE status = #{status} AND created_at &gt;= #{since}
+        GROUP BY consumer
+    </select>
+</mapper>

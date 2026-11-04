@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.command.mapper.CommandRunMapper">
+
+    <resultMap id="CommandRunResultMap" type="cloide.server.module.command.entity.CommandRunEntity">
+        <id column="id" property="id"/>
+        <result column="execution_id" property="executionId"/>
+        <result column="request_id" property="requestId"/>
+        <result column="proposer_id" property="proposerId"/>
+        <result column="approver_id" property="approverId"/>
+        <result column="server_id" property="serverId"/>
+        <result column="template_id" property="templateId"/>
+        <result column="params_json" property="paramsJson"/>
+        <result column="params_hash" property="paramsHash"/>
+        <result column="rendered_command" property="renderedCommand"/>
+        <result column="status" property="status"/>
+        <result column="source" property="source"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="approval_mode" property="approvalMode"/>
+        <result column="proposal_json" property="proposalJson"/>
+        <result column="result_json" property="resultJson"/>
+        <result column="exit_code" property="exitCode"/>
+        <result column="truncated" property="truncated"/>
+        <result column="duration_ms" property="durationMs"/>
+        <result column="error_code" property="errorCode"/>
+        <result column="expires_at" property="expiresAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="completed_at" property="completedAt"/>
+    </resultMap>
+
+    <sql id="AllColumns">
+        id, execution_id, request_id, proposer_id, approver_id, server_id, template_id,
+        params_json, params_hash, rendered_command, status, source, risk_level,
+        approval_mode, proposal_json, result_json, exit_code, truncated, duration_ms,
+        error_code, expires_at, created_at, updated_at, completed_at
+    </sql>
+
+    <insert id="insertRun" useGeneratedKeys="true" keyProperty="run.id" keyColumn="id">
+        INSERT INTO ai_command_runs
+        (execution_id, request_id, proposer_id, server_id, template_id, params_json,
+         params_hash, rendered_command, status, source, risk_level, approval_mode,
+         proposal_json, expires_at, created_at)
+        VALUES
+        (#{run.executionId}, #{run.requestId}, #{run.proposerId}, #{run.serverId}, #{run.templateId},
+         #{run.paramsJson}, #{run.paramsHash}, #{run.renderedCommand}, #{run.status}, #{run.source},
+         #{run.riskLevel}, #{run.approvalMode}, #{run.proposalJson}, #{run.expiresAt}, #{run.createdAt})
+    </insert>
+
+    <select id="selectRunById" resultMap="CommandRunResultMap">
+        SELECT <include refid="AllColumns"/>
+        FROM ai_command_runs
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectRunByExecutionId" resultMap="CommandRunResultMap">
+        SELECT <include refid="AllColumns"/>
+        FROM ai_command_runs
+        WHERE execution_id = #{executionId}
+    </select>
+
+    <select id="selectRuns" resultMap="CommandRunResultMap">
+        SELECT <include refid="AllColumns"/>
+        FROM ai_command_runs
+        WHERE 1 = 1
+        <if test="serverId != null">
+            AND server_id = #{serverId}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        ORDER BY id DESC
+    </select>
+
+    <update id="approveRun">
+        UPDATE ai_command_runs
+        SET status = 'approved', approver_id = #{approverId}
+        WHERE id = #{id}
+          AND status = 'pending_approval'
+          AND (expires_at IS NULL OR expires_at &gt; #{now})
+    </update>
+
+    <update id="autoApproveRun">
+        UPDATE ai_command_runs
+        SET status = 'approved', approval_mode = 'auto'
+        WHERE id = #{id}
+          AND status = 'pending_approval'
+    </update>
+
+    <update id="rejectRun">
+        UPDATE ai_command_runs
+        SET status = 'rejected', approver_id = #{approverId}, completed_at = #{now}
+        WHERE id = #{id}
+          AND status = 'pending_approval'
+    </update>
+
+    <update id="markExecuting">
+        UPDATE ai_command_runs
+        SET status = 'executing'
+        WHERE id = #{id}
+          AND status = 'approved'
+    </update>
+
+    <update id="markFailed">
+        UPDATE ai_command_runs
+        SET status = 'failed', error_code = #{errorCode}, completed_at = #{now}
+        WHERE id = #{id}
+          AND status = 'pending_approval'
+    </update>
+
+    <update id="completeRun">
+        UPDATE ai_command_runs
+        SET status = #{finalStatus}, result_json = #{resultJson}, exit_code = #{exitCode},
+            truncated = #{truncated}, duration_ms = #{durationMs}, error_code = #{errorCode},
+            completed_at = #{now}
+        WHERE execution_id = #{executionId}
+          AND status IN ('approved', 'executing')
+    </update>
+
+    <select id="selectExpiredIds" resultType="java.lang.Long">
+        SELECT id
+        FROM ai_command_runs
+        WHERE status = 'pending_approval'
+          AND expires_at IS NOT NULL
+          AND expires_at &lt;= #{now}
+        ORDER BY id
+        LIMIT #{batchSize}
+    </select>
+
+    <select id="selectTimeoutIds" resultType="java.lang.Long">
+        SELECT id
+        FROM ai_command_runs
+        WHERE status = 'executing'
+          AND updated_at &lt; #{threshold}
+        ORDER BY id
+        LIMIT #{batchSize}
+    </select>
+
+    <select id="selectRunsByIds" resultMap="CommandRunResultMap">
+        SELECT <include refid="AllColumns"/>
+        FROM ai_command_runs
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY id
+    </select>
+
+    <!-- 过期 CAS：仅 pending_approval 可置 expired，防止覆盖并发审批/回填已流转的行。 -->
+    <update id="markExpiredByIds">
+        UPDATE ai_command_runs
+        SET status = 'expired', completed_at = #{now}
+        WHERE status = 'pending_approval'
+          AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 超时 CAS：仅 executing 可置 timeout，防止覆盖并发结果回填写入的真实终态。 -->
+    <update id="markTimeoutByIds">
+        UPDATE ai_command_runs
+        SET status = 'timeout', error_code = #{errorCode}, completed_at = #{now}
+        WHERE status = 'executing'
+          AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <delete id="deleteExpiredBatch">
+        DELETE FROM ai_command_runs
+        WHERE created_at &lt; #{cutoffTime}
+        ORDER BY id
+        LIMIT #{batchSize}
+    </delete>
+
+    <!-- 观察期评审报告聚合：单行条件聚合，显式列出全部输出列（禁 SELECT *）。
+         SUM(CASE) 在窗口无行时返回 NULL，由服务层按 0 处理；AVG 忽略 duration_ms 为 NULL 的行。 -->
+    <select id="selectObservationAggregate"
+            resultType="cloide.server.module.command.dto.CommandObservationAggregate">
+        SELECT
+            COUNT(*) AS totalRuns,
+            SUM(CASE WHEN status = 'pending_approval' THEN 1 ELSE 0 END) AS statusPendingApproval,
+            SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS statusApproved,
+            SUM(CASE WHEN status = 'executing' THEN 1 ELSE 0 END) AS statusExecuting,
+            SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS statusSucceeded,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS statusFailed,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS statusRejected,
+            SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS statusExpired,
+            SUM(CASE WHEN status = 'timeout' THEN 1 ELSE 0 END) AS statusTimeout,
+            SUM(CASE WHEN approval_mode = 'auto' THEN 1 ELSE 0 END) AS approvalModeAuto,
+            SUM(CASE WHEN approval_mode = 'manual' THEN 1 ELSE 0 END) AS approvalModeManual,
+            SUM(CASE WHEN risk_level = 'low' THEN 1 ELSE 0 END) AS riskLevelLow,
+            SUM(CASE WHEN risk_level = 'medium' THEN 1 ELSE 0 END) AS riskLevelMedium,
+            SUM(CASE WHEN risk_level = 'high' THEN 1 ELSE 0 END) AS riskLevelHigh,
+            SUM(CASE WHEN source = 'ai' THEN 1 ELSE 0 END) AS sourceAi,
+            SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END) AS sourceManual,
+            SUM(CASE WHEN approval_mode = 'auto' AND risk_level = 'high' THEN 1 ELSE 0 END) AS highRiskAuto,
+            SUM(CASE WHEN approval_mode = 'auto'
+                      AND status IN ('succeeded', 'failed', 'timeout') THEN 1 ELSE 0 END) AS autoExecuted,
+            SUM(CASE WHEN approval_mode = 'auto'
+                      AND status IN ('failed', 'timeout') THEN 1 ELSE 0 END) AS autoFailed,
+            SUM(CASE WHEN approval_mode = 'manual'
+                      AND status IN ('succeeded', 'failed', 'timeout') THEN 1 ELSE 0 END) AS manualExecuted,
+            SUM(CASE WHEN approval_mode = 'manual'
+                      AND status IN ('failed', 'timeout') THEN 1 ELSE 0 END) AS manualFailed,
+            COUNT(DISTINCT server_id) AS distinctServers,
+            AVG(duration_ms) AS avgDurationMs,
+            MAX(duration_ms) AS maxDurationMs
+        FROM ai_command_runs
+        WHERE created_at &gt;= #{windowStart}
+    </select>
+
+    <!-- 观察期评审报告模板用量 Top N：GROUP BY 模板 ID 按次数降序，LIMIT 由服务层传入。 -->
+    <select id="selectTemplateUsage"
+            resultType="cloide.server.module.command.dto.TemplateUsageAggregate">
+        SELECT
+            template_id AS templateId,
+            COUNT(*) AS runs
+        FROM ai_command_runs
+        WHERE created_at &gt;= #{windowStart}
+        GROUP BY template_id
+        ORDER BY runs DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

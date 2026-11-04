@@ -1,0 +1,21 @@
+CREATE TABLE `terminal_sessions` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `session_id` VARCHAR(36) NOT NULL COMMENT 'Java生成的终端会话UUID',
+    `open_message_id` VARCHAR(36) NOT NULL COMMENT '浏览器terminal.open消息UUID，用于幂等',
+    `server_id` BIGINT UNSIGNED NOT NULL COMMENT '目标服务器ID',
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '终端请求用户ID',
+    `status` VARCHAR(16) NOT NULL COMMENT '会话状态: opening/open/closed/timeout/error',
+    `shell_identifier` VARCHAR(64) DEFAULT NULL COMMENT 'Agent返回的受保护固定Shell标识，不存Shell命令',
+    `close_reason` VARCHAR(128) DEFAULT NULL COMMENT '关闭原因，不存终端输入输出',
+    `opened_at` DATETIME DEFAULT NULL COMMENT 'Agent确认PTY创建时间',
+    `closed_at` DATETIME DEFAULT NULL COMMENT '会话关闭时间',
+    `last_activity_at` DATETIME NOT NULL COMMENT '最近一次已接受的会话控制活动时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '会话创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_terminal_sessions_session` (`session_id`),
+    UNIQUE KEY `uk_terminal_sessions_user_open_message` (`user_id`, `open_message_id`),
+    KEY `idx_terminal_sessions_server_status` (`server_id`, `status`),
+    KEY `idx_terminal_sessions_user_status` (`user_id`, `status`),
+    KEY `idx_terminal_sessions_last_activity` (`last_activity_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='公网Agent反向终端会话元数据表，不保存PTY数据';

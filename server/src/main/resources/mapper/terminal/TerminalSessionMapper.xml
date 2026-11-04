@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.terminal.mapper.TerminalSessionMapper">
+    <resultMap id="TerminalSessionResultMap" type="cloide.server.module.terminal.entity.TerminalSessionEntity">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="open_message_id" property="openMessageId"/>
+        <result column="server_id" property="serverId"/>
+        <result column="user_id" property="userId"/>
+        <result column="status" property="status"/>
+        <result column="shell_identifier" property="shellIdentifier"/>
+        <result column="close_reason" property="closeReason"/>
+        <result column="opened_at" property="openedAt"/>
+        <result column="closed_at" property="closedAt"/>
+        <result column="last_activity_at" property="lastActivityAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="TerminalSessionColumns">id, session_id, open_message_id, server_id, user_id, status,
+        shell_identifier, close_reason, opened_at, closed_at, last_activity_at, created_at, updated_at</sql>
+
+    <insert id="insertSession" useGeneratedKeys="true" keyProperty="session.id">
+        INSERT INTO terminal_sessions
+        (session_id, open_message_id, server_id, user_id, status, last_activity_at)
+        VALUES (#{session.sessionId}, #{session.openMessageId}, #{session.serverId}, #{session.userId},
+            #{session.status}, #{session.lastActivityAt})
+    </insert>
+
+    <select id="selectBySessionId" resultMap="TerminalSessionResultMap">
+        SELECT <include refid="TerminalSessionColumns"/> FROM terminal_sessions
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <select id="selectByUserIdAndOpenMessageId" resultMap="TerminalSessionResultMap">
+        SELECT <include refid="TerminalSessionColumns"/> FROM terminal_sessions
+        WHERE user_id = #{userId} AND open_message_id = #{openMessageId}
+    </select>
+
+    <select id="selectActiveByServerId" resultMap="TerminalSessionResultMap">
+        SELECT <include refid="TerminalSessionColumns"/> FROM terminal_sessions
+        WHERE server_id = #{serverId} AND status IN ('opening', 'open')
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <select id="selectActiveByUserId" resultMap="TerminalSessionResultMap">
+        SELECT <include refid="TerminalSessionColumns"/> FROM terminal_sessions
+        WHERE user_id = #{userId} AND status IN ('opening', 'open')
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <select id="selectAllActive" resultMap="TerminalSessionResultMap">
+        SELECT <include refid="TerminalSessionColumns"/> FROM terminal_sessions
+        WHERE status IN ('opening', 'open')
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <select id="countActiveUsers" resultType="int">
+        SELECT COUNT(DISTINCT user_id)
+        FROM terminal_sessions
+        WHERE status IN ('opening', 'open')
+    </select>
+
+    <update id="markOpened">
+        UPDATE terminal_sessions
+        SET status = 'open', shell_identifier = #{shellIdentifier}, opened_at = #{openedAt},
+            last_activity_at = #{openedAt}
+        WHERE session_id = #{sessionId} AND status = 'opening'
+    </update>
+
+    <update id="closeSession">
+        UPDATE terminal_sessions
+        SET status = #{status}, close_reason = #{closeReason}, closed_at = #{closedAt},
+            last_activity_at = #{closedAt}
+        WHERE session_id = #{sessionId} AND status IN ('opening', 'open')
+    </update>
+
+    <update id="updateLastActivity">
+        UPDATE terminal_sessions
+        SET last_activity_at = #{lastActivityAt}
+        WHERE session_id = #{sessionId} AND status IN ('opening', 'open')
+    </update>
+</mapper>

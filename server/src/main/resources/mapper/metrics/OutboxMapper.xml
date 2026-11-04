@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.metrics.outbox.OutboxMapper">
+    <resultMap id="OutboxResultMap" type="cloide.server.module.metrics.outbox.OutboxEntity">
+        <id column="id" property="id"/>
+        <result column="event_id" property="eventId"/>
+        <result column="event_type" property="eventType"/>
+        <result column="routing_key" property="routingKey"/>
+        <result column="payload" property="payload"/>
+        <result column="status" property="status"/>
+        <result column="attempts" property="attempts"/>
+        <result column="next_attempt_at" property="nextAttemptAt"/>
+        <result column="last_error" property="lastError"/>
+        <result column="published_at" property="publishedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+    <sql id="OutboxColumns">id, event_id, event_type, routing_key, payload, status, attempts, next_attempt_at,
+        last_error, published_at, created_at, updated_at</sql>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="outbox.id">
+        INSERT INTO message_outbox (event_id, event_type, routing_key, payload, status, attempts, next_attempt_at)
+        VALUES (#{outbox.eventId}, #{outbox.eventType}, #{outbox.routingKey}, #{outbox.payload},
+            #{outbox.status}, #{outbox.attempts}, #{outbox.nextAttemptAt})
+    </insert>
+    <!-- 应用写入的 next_attempt_at 为 UTC（Clock.systemUTC），必须与 UTC_TIMESTAMP() 比较，
+         否则会话时区（如 Asia/Shanghai）会造成 8 小时偏差，退避永不生效。 -->
+    <select id="selectPendingForPublish" resultMap="OutboxResultMap">
+        SELECT <include refid="OutboxColumns"/> FROM message_outbox
+        WHERE status = 'pending' AND next_attempt_at &lt;= UTC_TIMESTAMP()
+        ORDER BY id ASC
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+    <update id="markPublished">
+        UPDATE message_outbox
+        SET status = 'published', published_at = #{publishedAt}
+        WHERE id = #{id} AND status = 'pending'
+    </update>
+    <update id="markRetry">
+        UPDATE message_outbox
+        SET attempts = #{attempts}, next_attempt_at = #{nextAttemptAt}, last_error = #{lastError}
+        WHERE id = #{id} AND status = 'pending'
+    </update>
+</mapper>
