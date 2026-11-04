@@ -1,0 +1,25 @@
+[Unit]
+Description=cloide-shell Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/cloide-agent
+EnvironmentFile=/etc/cloide/agent.env
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/cloide/agent.log
+StandardError=append:/var/log/cloide/agent.log
+LimitNOFILE=65536
+# PTY/命令域需要 root；以下加固限制可写路径与提权面。
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/cloide
+
+[Install]
+WantedBy=multi-user.target

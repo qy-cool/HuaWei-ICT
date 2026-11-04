@@ -1,0 +1,27 @@
+[Unit]
+Description=cloide-shell Java Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloide
+Group=cloide
+WorkingDirectory=/opt/cloide/server
+EnvironmentFile=/etc/cloide/server.env
+Environment="JAVA_TOOL_OPTIONS=-Xms256m -Xmx768m -Dfile.encoding=UTF-8"
+ExecStart=/usr/bin/java -jar /opt/cloide/server/cloide-server.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/cloide
+StateDirectory=cloide
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

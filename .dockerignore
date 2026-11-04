@@ -1,0 +1,52 @@
+.git
+.github
+.gitignore
+.editorconfig
+
+# 本地参考仓库与迁移源
+harness/
+ide/
+cloide-shell/
+
+# 文档与规范不进入构建上下文
+docs/
+.agents/
+.zcode/
+.artifacts/
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+secrets/
+
+# Dependencies and build outputs
+node_modules/
+dist/
+build/
+target/
+.gradle/
+.kotlin/
+local.properties
+captures/
+*.class
+*.log
+logs/
+tmp/
+backup/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
