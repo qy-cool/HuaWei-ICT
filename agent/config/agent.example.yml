@@ -1,0 +1,17 @@
+# 仅字段参考：Agent 运行时只读取 CLOIDE_* 环境变量，本文件不会被自动加载。
+# 实际变量名见 agent/README.md 与 docs/ops-manual/Go-Agent 部署使用手册.md。
+backend_url: "ws://localhost:18080"
+server_id: 1
+agent_token: "REPLACE_WITH_AGENT_TOKEN"
+collect_interval_seconds: 5
+heartbeat_interval_seconds: 30
+reconnect_initial_seconds: 5
+reconnect_max_seconds: 60
+metrics_buffer_path: "/var/lib/cloide/metrics-buffer.json"
+metrics_buffer_max_entries: 720
+metrics_ack_timeout_seconds: 15
+metrics_retry_initial_seconds: 2
+metrics_retry_max_seconds: 60
+metrics_replay_min_interval_millis: 2500
+metrics_retry_jitter_enabled: true
+log_level: "info"
