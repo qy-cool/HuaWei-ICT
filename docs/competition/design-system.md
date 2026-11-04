@@ -83,7 +83,8 @@
 - 每个数据视图必须有加载（Skeleton）、错误（Alert + 重试）、空（Empty）三态。
 - 弹层必须有 Title；表格在自身容器内横向滚动；长文本 `truncate`。
 - 优先组合 `src/components/ui/` 已有组件，不改内部实现（见 `hwict-shadcn`）。
-- 组件原语：Base UI，语义标签用 `render` 传递，不用 `asChild`（见 `hwict-shadcn`）。
+- 组件原语：Base UI，语义标签用 `render` 传递；非 `button` 元素同时传
+  `nativeButton={false}`，不用 `asChild`（见 `hwict-shadcn`）。
 
 ## 9. 响应式断点
 

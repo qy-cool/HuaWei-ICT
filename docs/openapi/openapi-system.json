@@ -1,0 +1,657 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "cloide-shell System API",
+    "description": "Authoritative cloide-shell system API contract for implementation, tests and Apifox import.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:18080",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "system",
+      "description": "System health and readiness checks"
+    },
+    {
+      "name": "rabbitmq-monitor",
+      "description": "RabbitMQ runtime monitoring snapshots (ROLE_ADMIN only)"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health check",
+        "description": "Checks whether the backend application is alive. This endpoint does not depend on the database.",
+        "operationId": "getHealth",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XCorrelationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application is alive",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Correlation-ID": {
+                "$ref": "#/components/headers/XCorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "example": {
+                  "code": 0,
+                  "message": "success",
+                  "data": {
+                    "status": "UP",
+                    "application": "cloide",
+                    "timestamp": "2026-07-13T10:00:00+08:00"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness check",
+        "description": "Checks whether the backend application and database connection are ready. When the Outbox/RabbitMQ integration is enabled, it also requires the Broker health check to pass. A Broker failure leaves the process alive but returns readiness code 50301 and HTTP 503.",
+        "operationId": "getReady",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XCorrelationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application, database, and enabled RabbitMQ integration are ready",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Correlation-ID": {
+                "$ref": "#/components/headers/XCorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                },
+                "example": {
+                  "code": 0,
+                  "message": "success",
+                  "data": {
+                    "status": "UP",
+                    "database": "ok",
+                    "timestamp": "2026-07-13T10:00:00+08:00"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Database is unavailable, Redis is enabled but unavailable, or an internal server error occurred",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Correlation-ID": {
+                "$ref": "#/components/headers/XCorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                  "examples": {
+                    "databaseError": {
+                      "summary": "Database connection failed",
+                      "value": {
+                        "code": 50001,
+                        "message": "database error",
+                        "data": null
+                      }
+                    },
+                    "internalServerError": {
+                      "summary": "Internal server error",
+                      "value": {
+                        "code": 50000,
+                        "message": "internal server error",
+                        "data": null
+                      }
+                    },
+                    "redisUnavailable": {
+                      "summary": "Redis is enabled but unavailable",
+                      "value": {
+                        "code": 50302,
+                        "message": "redis unavailable",
+                        "data": null
+                      }
+                    }
+                  }
+              }
+            }
+          },
+          "503": {
+            "description": "RabbitMQ is enabled but unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Correlation-ID": {
+                "$ref": "#/components/headers/XCorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 50301,
+                  "message": "rabbitmq unavailable",
+                  "data": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/rabbitmq/consumers": {
+      "get": {
+        "tags": [
+          "rabbitmq-monitor"
+        ],
+        "summary": "Consume timing and failure-rate window snapshot",
+        "description": "Per-consumer processing timing window (in-memory) combined with the failure-rate window aggregated from message_consume_records (V15). Returns an empty list when the RabbitMQ integration is disabled.",
+        "operationId": "getRabbitmqConsumers",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XCorrelationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumer stats snapshot",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Correlation-ID": {
+                "$ref": "#/components/headers/XCorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsumeStatsListResponse"
+                },
+                "example": {
+                  "code": 0,
+                  "message": "success",
+                  "data": [
+                    {
+                      "consumer": "alert-notifier",
+                      "total_count": 12,
+                      "avg_ms": 45,
+                      "max_ms": 120,
+                      "last_sample_at": "2026-08-16T10:00:00Z",
+                      "failed_window": 1,
+                      "consumed_window": 11,
+                      "failure_rate": 0.0833
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/system/rabbitmq/queues": {
+      "get": {
+        "tags": [
+          "rabbitmq-monitor"
+        ],
+        "summary": "Queue backlog snapshot",
+        "description": "Latest passive-declare probe snapshot of the six frozen queues: business queues (type=business, warned when exceeding the threshold) and dead-letter queues (type=dead_letter). Returns an empty list when the RabbitMQ integration is disabled or no probe has run yet.",
+        "operationId": "getRabbitmqQueues",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XCorrelationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queue backlog snapshot",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Correlation-ID": {
+                "$ref": "#/components/headers/XCorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueBacklogListResponse"
+                },
+                "example": {
+                  "code": 0,
+                  "message": "success",
+                  "data": [
+                    {
+                      "queue": "cloide.alert.metrics",
+                      "type": "business",
+                      "messages": 3,
+                      "warn_threshold": 10000,
+                      "checked_at": "2026-08-16T10:00:00Z",
+                      "error": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "XCorrelationId": {
+        "name": "X-Correlation-ID",
+        "in": "header",
+        "required": false,
+        "description": "Optional client correlation ID. Invalid values are ignored and never logged.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "headers": {
+      "XRequestId": {
+        "description": "UUID request ID generated by the server. Client-provided X-Request-ID values are ignored.",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "readOnly": true,
+          "example": "6f4e8d9d-2d0a-4d11-8b7d-9f8d2f5f2f4a"
+        }
+      },
+      "XCorrelationId": {
+        "description": "Validated client correlation ID, returned only when a valid request header was provided.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HealthStatus"
+          }
+        }
+      },
+      "ReadyResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReadyStatus"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "example": 50001
+          },
+          "message": {
+            "type": "string",
+            "example": "database error"
+          },
+          "data": {
+            "nullable": true,
+            "example": null
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "required": [
+          "status",
+          "application",
+          "timestamp"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "UP"
+          },
+          "application": {
+            "type": "string",
+            "example": "cloide"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-13T10:00:00+08:00"
+          }
+        }
+      },
+      "ReadyStatus": {
+        "type": "object",
+        "required": [
+          "status",
+          "database",
+          "timestamp"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "UP"
+          },
+          "database": {
+            "type": "string",
+            "example": "ok"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-13T10:00:00+08:00"
+          }
+        }
+      },
+      "ConsumeStatsListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsumeStats"
+            }
+          }
+        }
+      },
+      "ConsumeStats": {
+        "type": "object",
+        "properties": {
+          "consumer": {
+            "type": "string"
+          },
+          "total_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "avg_ms": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "max_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_sample_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "failed_window": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "consumed_window": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "failure_rate": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "QueueBacklogListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "example": 0
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueBacklog"
+            }
+          }
+        }
+      },
+      "QueueBacklog": {
+        "type": "object",
+        "properties": {
+          "queue": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "business",
+              "dead_letter"
+            ]
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warn_threshold": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "error": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "responses": {
+      "InternalServerError": {
+        "description": "Internal server error",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestId"
+          },
+          "X-Correlation-ID": {
+            "$ref": "#/components/headers/XCorrelationId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": 50000,
+              "message": "internal server error",
+              "data": null
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid JWT",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestId"
+          },
+          "X-Correlation-ID": {
+            "$ref": "#/components/headers/XCorrelationId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": 40100,
+              "message": "unauthorized",
+              "data": null
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated but not an administrator",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestId"
+          },
+          "X-Correlation-ID": {
+            "$ref": "#/components/headers/XCorrelationId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": 40300,
+              "message": "forbidden",
+              "data": null
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
