@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主题色：浅紫 / 粉色系 -->
+    <color name="cloide_purple">#9C7BD8</color>
+    <color name="cloide_pink">#F4B8C8</color>
+    <color name="ic_launcher_background">#F7EDFB</color>
+</resources>

@@ -1,0 +1,92 @@
+package cloide.app.api
+
+import cloide.app.data.model.AgentTokenVo
+import cloide.app.data.model.ApiResponse
+import cloide.app.data.model.ConfirmSshHostKeyRequest
+import cloide.app.data.model.CreateServerRequest
+import cloide.app.data.model.PageResult
+import cloide.app.data.model.Server
+import cloide.app.data.model.ServerStatus
+import cloide.app.data.model.SshHostKeyObservation
+import cloide.app.data.model.SshHostKeyVo
+import cloide.app.data.model.SshTestHistoryItem
+import cloide.app.data.model.SshTestResult
+import cloide.app.data.model.UpdateServerRequest
+import retrofit2.http.Body
+import retrofit2.http.DELETE
+import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Path
+import retrofit2.http.Query
+
+/**
+ * 服务器 API，端点与 OpenAPI `openapi-server.json` 对齐。
+ * CRUD 与 SSH/Agent 管理端点要求 ROLE_ADMIN。
+ */
+interface ServerApi {
+
+    /** 分页查询服务器列表，支持 keyword 模糊检索与排序。 */
+    @GET("servers")
+    suspend fun listServers(
+        @Query("page") page: Int = 1,
+        @Query("page_size") pageSize: Int = 20,
+        @Query("keyword") keyword: String? = null,
+        @Query("sort_by") sortBy: String? = null,
+        @Query("sort_order") sortOrder: String? = null,
+    ): ApiResponse<PageResult<Server>>
+
+    /** 获取单台服务器公开 VO。 */
+    @GET("servers/{id}")
+    suspend fun getServer(@Path("id") id: Long): ApiResponse<Server>
+
+    /** 创建服务器（admin）。 */
+    @POST("servers")
+    suspend fun createServer(@Body body: CreateServerRequest): ApiResponse<Server>
+
+    /** 更新服务器（admin）。 */
+    @PUT("servers/{id}")
+    suspend fun updateServer(
+        @Path("id") id: Long,
+        @Body body: UpdateServerRequest,
+    ): ApiResponse<Server>
+
+    /** 软删除服务器（admin）。 */
+    @DELETE("servers/{id}")
+    suspend fun deleteServer(@Path("id") id: Long): ApiResponse<Unit>
+
+    /** 获取服务器状态快照（状态、Agent、上次心跳、投递遥测）。 */
+    @GET("servers/{id}/status")
+    suspend fun getServerStatus(@Path("id") id: Long): ApiResponse<ServerStatus>
+
+    /** SSH 连接测试（admin；无请求体）。 */
+    @POST("servers/{id}/ssh/test")
+    suspend fun testSsh(@Path("id") id: Long): ApiResponse<SshTestResult>
+
+    /** SSH 连接测试历史（admin）。 */
+    @GET("servers/{id}/ssh/test/history")
+    suspend fun sshTestHistory(@Path("id") id: Long): ApiResponse<List<SshTestHistoryItem>>
+
+    /** 观察远端当前主机公钥指纹（admin；不改变信任登记）。 */
+    @POST("servers/{id}/ssh/host-key/observe")
+    suspend fun observeHostKey(@Path("id") id: Long): ApiResponse<SshHostKeyObservation>
+
+    /** 确认/轮换 SSH 主机公钥指纹（admin）。 */
+    @PUT("servers/{id}/ssh/host-key")
+    suspend fun confirmSshHostKey(
+        @Path("id") id: Long,
+        @Body body: ConfirmSshHostKeyRequest,
+    ): ApiResponse<SshHostKeyVo>
+
+    /** 生成 Agent Token（admin；明文仅此响应一次）。 */
+    @POST("servers/{id}/agent/register")
+    suspend fun registerAgentToken(@Path("id") id: Long): ApiResponse<AgentTokenVo>
+
+    /** 轮换 Agent Token（admin；明文仅此响应一次）。 */
+    @POST("servers/{id}/agent/rotate")
+    suspend fun rotateAgentToken(@Path("id") id: Long): ApiResponse<AgentTokenVo>
+
+    /** 吊销 Agent Token（admin）。 */
+    @DELETE("servers/{id}/agent/revoke")
+    suspend fun revokeAgentToken(@Path("id") id: Long): ApiResponse<Unit>
+}
