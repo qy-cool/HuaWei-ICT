@@ -38,6 +38,8 @@ user-invocable: true
 | scope | 说明 |
 |------|------|
 | server | 后端服务（Java Spring Boot） |
+| agent | Go 采集 Agent（`agent/`） |
+| android | Kotlin/Compose 客户端（`android/`） |
 | web | Web 前端（React） |
 | skills | 项目级 skill 与决策笔记 |
 | docs | 文档（含比赛材料） |

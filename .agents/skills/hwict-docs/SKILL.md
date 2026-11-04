@@ -45,11 +45,16 @@ docs/
 
 ## 3. OpenAPI 接口文档 (docs/openapi/)
 
-- 使用 OpenAPI 3.0 规范，以 `.json` 文件格式存放
+- 使用 OpenAPI 3.1 规范（JSON Schema 2020-12），以 `.json` 文件格式存放；
+  以 springdoc-openapi 3.x 生成的 3.1.0 为准，空值用类型数组表达（如
+  `"type": ["string", "null"]`），不使用 `nullable`
 - 文件命名格式: `openapi-{模块名}.json`（如 `openapi-alert.json`）
 - 每次新增或修改 API 接口时，同步更新对应的 OpenAPI 文档
 - 模板见 `references/openapi-template.json`
 - 建议在前端工程配置契约校验脚本（骨架建立后），保证类型定义与后端同步
+- 迁移期例外（2026-10-29）：`docs/openapi/` 现为 cloide-shell 迁入的
+  3.0.3 快照（含 `nullable`），待后端升级到 springdoc 3.2.0 后重新生成
+  3.1.0；当前版本以 `docs/openapi/README.md` 为准
 
 ## 4. 协议文档 (docs/protocol/)
 

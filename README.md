@@ -10,27 +10,64 @@
 
 - **赛题**：基于华为云产品（RDS MySQL、Redis、MaaS 大模型服务）打造 AI
   创新应用，部署在华为云，演示真实可跑（决赛组委复核作品）。
-- **技术栈**：后端 Java 21 + Spring Boot（`server/`）；前端 React 19 +
-  TypeScript + Vite + Tailwind + shadcn/ui（`web/`）。
+- **技术栈**：后端 Java 21 + Spring Boot（`server/`，迁移期 3.4.13，目标 4.1.2）；
+  Go 1.23 采集 Agent（`agent/`）；Kotlin 2.0.21 + Jetpack Compose 客户端
+  （`android/`）；前端 React 19 + TypeScript + Vite + Tailwind + shadcn/ui
+  （Base UI，`web/` 待建立）。
 - **赛程**：报名截止 2026-11-30 → 初赛（材料评审）2026-12 →
   中国总决赛 2027-03 → 全球总决赛 2027-05。
 
+## 工程底座与迁移说明
+
+本项目以作者此前开源的 **cloide-shell** 服务器监控平台为底座
+迁入：保留 Java 后端、Go Agent、Kotlin Android 三端，**旧 Vue Web 前端不迁入**；
+`web/` 后续按 React 重建。迁移期沿用旧项目版本（Spring Boot 3.4.13 等），升级另议，
+决策见 `.agents/notes/implemented/architecture/2026-10-29-cloide-shell-migration.md`。
+
 ## 环境要求
 
-- 后端：JDK 21 + Maven 3.9+（`server/` 建立后统一用 Maven Wrapper）。
-- 前端：Node.js 24 与 pnpm（`web/`）。
+- 后端：JDK 21；`server/` 统一用 Maven Wrapper（Maven 3.9.9）。
+- Agent：Go 1.23（`agent/`）。
+- Android：JDK 17+ 与 Android SDK 36（`android/`）。
+- 前端：Node.js 24 与 pnpm（`web/`，待建立）。
 - Git：换行由 `.gitattributes` 统一为 LF；Windows 下无需额外配置。
-- 团队本机实测：Java 21.0.12、Maven 3.9.10、Node 24.19、pnpm 11.25。
+- 团队本机实测：Java 21.0.12、Maven 3.9.10、Node 24.19、pnpm 11.25、Go 1.27.0。
+
+> 迁移期版本：Spring Boot 3.4.13、MyBatis-Plus 3.5.12、springdoc 2.8.9、
+> OpenAPI 3.0.3；MySQL 8.4 / RabbitMQ 4.3 / Redis 7；Go 1.23；
+> Kotlin 2.0.21 / AGP 8.13.0 / Gradle 8.13。仓库目标基线见
+> `docs/plans/20261029-规范修复与骨架准备.md`，升级另开 PR。
 
 ## 仓库结构
 
 ```text
-server/    Java 后端（Spring Boot，包根 com.hwict.server）——待建立
+server/    Java 后端（Spring Boot，包根 cloide.server）
+agent/     Go 1.23 采集 Agent
+android/   Kotlin 2.0.21 + Jetpack Compose 客户端
+deploy/    systemd / nginx / 安装与备份脚本
+scripts/   api-test 端到端回归、OpenAPI 契约校验
 web/       React 前端——待建立
 docs/      plans 开发计划 / openapi 接口契约 / protocol 协议文档 /
-           logs 开发日志 / competition 比赛材料与留痕
+           logs 开发日志 / ops-manual 运维手册 / competition 比赛材料与留痕
 .agents/   AI 协作规范（skills/）与架构决策笔记（notes/）
 .github/   CI 工作流、PR 模板、CODEOWNERS
+```
+
+## 快速开始
+
+```bash
+# 后端单测
+cd server && ./mvnw test
+
+# Go Agent
+cd agent && go vet ./... && go test ./...
+
+# Android 单测
+cd android && ./gradlew :app:testDebugUnitTest
+
+# 本地依赖（MySQL / RabbitMQ / Redis / Server）
+cp .env.example .env   # 填必填项
+docker compose up -d
 ```
 
 ## 队员第一次上手
@@ -77,6 +114,8 @@ docs/      plans 开发计划 / openapi 接口契约 / protocol 协议文档 /
 |------|-------|----------|
 | 总纲 / 比赛约束 | `hwict-dev` | 技能索引 + 验证矩阵 + 工作流 |
 | 后端 Java | `hwict-java` | Controller 只做参数与响应，业务在 Service；凭据只走环境变量 |
+| Go Agent | `hwict-go`（待建） | 地址与 Token 只走环境变量；PTY/命令默认关闭 |
+| Android | `hwict-android`（待建） | 不硬编码后端地址；release 必须注入 `BASE_URL`/`WS_URL` |
 | 前端 React | `hwict-react` | TanStack 路由与数据请求；页面组件就近放；语义化 HTML |
 | UI 组件 | `hwict-shadcn` | 组合优先；只用语义色 token；Dialog 必带 Title |
 | 视觉设计 | `hwict-ui-design` | 设计系统先行（`docs/competition/design-system.md`） |
@@ -90,9 +129,14 @@ docs/      plans 开发计划 / openapi 接口契约 / protocol 协议文档 /
 验证速览（改什么 → 至少跑什么，全表见 `hwict-dev` 第 2 节）：
 
 - Java 后端：`./mvnw test`
-- 前端：`pnpm typecheck` + `pnpm lint` + `pnpm test`（交付前 `pnpm build`；脚本以 `web/package.json` 为准）
+- Go Agent：`go vet ./...` + `go test ./...`
+- Android：`./gradlew :app:testDebugUnitTest`
+- 前端（待建立）：`pnpm typecheck` + `pnpm lint` + `pnpm test`（交付前 `pnpm build`）
 - 决策笔记：PR 上由 CI 自动校验
+- 代码 PR：会运行 `Verify Server` / `Verify Agent` / `Verify Android` / `Verify Web`
+  （目录不存在时跳过；加入分支保护后作为合并门禁）
 - 文档引用：`node .agents/skills/hwict-docs/scripts/check-docs-links.mjs`
+- OpenAPI 契约：`node scripts/check-openapi.mjs`
 
 ## 全局约定
 
@@ -108,9 +152,10 @@ docs/      plans 开发计划 / openapi 接口契约 / protocol 协议文档 /
 架构决策笔记在合入 `main` 后自动发布为网页看板：
 <https://genhao0823.github.io/HuaWei-ICT/>
 
-Pages 已启用（Source = GitHub Actions）；首次由 `main` 触发部署后该地址生效，
-设置与排障见 `docs/ops-manual/repo-setup.md`。
+Pages 已上线（2026-10-28，Source = GitHub Actions）；最近一次部署 run
+`40691217782` 成功，设置与排障见 `docs/ops-manual/repo-setup.md`。
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+MIT，见 [LICENSE](LICENSE)。迁入的 cloide-shell 底座由作者本人开源；本项目整体按
+MIT 发布。

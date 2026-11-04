@@ -21,3 +21,8 @@
 *.jar binary
 *.zip binary
 *.pdf binary
+*.apk binary
+*.aab binary
+*.jks binary
+*.keystore binary
+*.go text eol=lf
