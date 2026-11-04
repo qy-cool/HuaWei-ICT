@@ -1,0 +1,77 @@
+# 代码 PR 的前端卡点：web/ 尚未建立时跳过，建立后跑类型检查、Lint、测试与构建。
+# 刻意不加 paths 过滤：本工作流成为 required check 后，任何 PR 都必须上报状态，
+# 否则不碰前端的 PR 会永远停在 Expected。
+name: Verify Web
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Detect web module
+        id: detect
+        shell: bash
+        run: |
+          if [ -f web/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "web/package.json not found; skipping frontend verification."
+          fi
+
+      - name: Set up pnpm
+        if: steps.detect.outputs.exists == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+          run_install: false
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.exists == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: web
+        run: pnpm typecheck
+
+      - name: Lint
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: web
+        run: pnpm lint
+
+      - name: Test
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: web
+        run: pnpm test
+
+      - name: Build
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: web
+        run: pnpm build
