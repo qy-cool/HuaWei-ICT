@@ -1,0 +1,272 @@
+@baseUrl = http://localhost:18080
+@adminToken = REPLACE_WITH_ADMIN_JWT_TOKEN
+@userToken = REPLACE_WITH_APPROVED_USER_JWT_TOKEN
+@serverId = 1
+@pendingUserId = REPLACE_WITH_PENDING_USER_ID
+@expectedFingerprint = SHA256:REPLACEWITHTRUSTEDBASE64FINGERPRINT
+@monitorTicket = REPLACE_WITH_ONE_TIME_MONITOR_TICKET
+
+### System: health
+GET {{baseUrl}}/api/health
+X-Correlation-ID: local-health-request
+
+### System: ready
+GET {{baseUrl}}/api/ready
+X-Correlation-ID: local-ready-request
+
+### Auth: bootstrap status（公开端点：true 表示注册需携带一次性初始化令牌）
+GET {{baseUrl}}/api/auth/bootstrap-status
+X-Correlation-ID: local-bootstrap-status-request
+
+### Auth: register first admin or normal user
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+X-Correlation-ID: local-register-request
+
+{
+  "username": "admin",
+  "password": "REPLACE_WITH_PASSWORD"
+}
+
+### Auth: register first admin while bootstrap pending（批次 8：待初始化实例须携带令牌，
+### 取值见服务器启动横幅或 AUTH_BOOTSTRAP_TOKEN 预置，32-128 字符，成功后立即失效）
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+X-Correlation-ID: local-register-bootstrap-request
+
+{
+  "username": "admin",
+  "password": "REPLACE_WITH_PASSWORD",
+  "bootstrapToken": "REPLACE_WITH_ONE_TIME_BOOTSTRAP_TOKEN"
+}
+
+### Auth: login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+X-Correlation-ID: local-login-request
+
+{
+  "username": "admin",
+  "password": "REPLACE_WITH_PASSWORD"
+}
+
+### Auth: current user
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-current-user-request
+
+### Auth: logout
+POST {{baseUrl}}/api/auth/logout
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-logout-request
+
+### Admin: pending users
+GET {{baseUrl}}/api/admin/users/pending
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-admin-pending-users
+
+### Admin: approve user
+PUT {{baseUrl}}/api/admin/users/{{pendingUserId}}/approve
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-admin-approve-user
+
+### Admin: reject user
+PUT {{baseUrl}}/api/admin/users/{{pendingUserId}}/reject
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-admin-reject-user
+
+### Servers: list
+GET {{baseUrl}}/api/servers?page=1&page_size=20&keyword=&sort_by=id&sort_order=desc
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-server-list
+
+### Servers: create
+POST {{baseUrl}}/api/servers
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-server-create-password
+
+{
+  "name": "local-server",
+  "host": "127.0.0.1",
+  "description": "Local development server",
+  "ssh_host": "127.0.0.1",
+  "ssh_port": 22,
+  "ssh_user": "REPLACE_WITH_SSH_USER",
+  "ssh_auth_type": "password",
+  "ssh_password": "REPLACE_WITH_SSH_PASSWORD"
+}
+
+### Servers: create with private key
+POST {{baseUrl}}/api/servers
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-server-create-private-key
+
+{
+  "name": "private-key-server",
+  "host": "SERVER_IP_OR_DOMAIN",
+  "description": "Private key authentication example",
+  "ssh_host": "SERVER_IP_OR_DOMAIN",
+  "ssh_port": 22,
+  "ssh_user": "REPLACE_WITH_SSH_USER",
+  "ssh_auth_type": "private_key",
+  "ssh_private_key": "REPLACE_WITH_PRIVATE_KEY",
+  "ssh_private_key_passphrase": "REPLACE_WITH_OPTIONAL_PASSPHRASE"
+}
+
+### Servers: detail
+GET {{baseUrl}}/api/servers/{{serverId}}
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-server-detail
+
+### Servers: update
+PUT {{baseUrl}}/api/servers/{{serverId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-server-update
+
+{
+  "name": "local-server",
+  "host": "127.0.0.1",
+  "description": "Updated local development server",
+  "ssh_host": "127.0.0.1",
+  "ssh_port": 22,
+  "ssh_user": "REPLACE_WITH_SSH_USER",
+  "ssh_auth_type": "password"
+}
+
+### Servers: status
+GET {{baseUrl}}/api/servers/{{serverId}}/status
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-server-status
+
+### Servers: delete soft
+DELETE {{baseUrl}}/api/servers/{{serverId}}
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-server-delete
+
+### SSH: confirm host key for the first time or review it unchanged
+PUT {{baseUrl}}/api/servers/{{serverId}}/ssh/host-key
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-ssh-host-key-confirm
+
+{
+  "expected_fingerprint": "{{expectedFingerprint}}",
+  "replace": false
+}
+
+### SSH: explicitly confirm a trusted host key rotation
+PUT {{baseUrl}}/api/servers/{{serverId}}/ssh/host-key
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-ssh-host-key-rotate
+
+{
+  "expected_fingerprint": "{{expectedFingerprint}}",
+  "replace": true
+}
+
+### SSH: test stored credential against the registered host key (no request body)
+POST {{baseUrl}}/api/servers/{{serverId}}/ssh/test
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-ssh-connection-test
+
+### Agent: register one-time token
+POST {{baseUrl}}/api/servers/{{serverId}}/agent/register
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-agent-register
+
+### Agent: rotate token
+POST {{baseUrl}}/api/servers/{{serverId}}/agent/rotate
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-agent-rotate
+
+### Agent: revoke token
+DELETE {{baseUrl}}/api/servers/{{serverId}}/agent/revoke
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-agent-revoke
+
+### Monitor: request one-time WebSocket ticket
+POST {{baseUrl}}/api/ws/monitor-ticket
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-monitor-ticket
+
+# 使用响应 data.ticket 建立：
+# ws://SERVER_IP_OR_DOMAIN/ws/monitor?ticket={{monitorTicket}}
+# 首帧示例：{"type":"metrics.subscribe","message_id":"REPLACE_WITH_UUID","timestamp":"2026-07-21T12:00:00Z","payload":{"server_id":1}}
+
+# Agent 使用 data.agent_token 建立 ws://SERVER_IP_OR_DOMAIN/ws/agent；
+# Token 只放在 agent.authenticate 首帧 payload 中，不进入 URL、日志或版本控制文件。
+# metrics.report 示例：{"type":"metrics.report","message_id":"REPLACE_WITH_UUID","timestamp":"2026-07-25T12:00:00Z","payload":{"server_id":1,"collected_at":"2026-07-25T12:00:00Z","cpu_percent":35.2}}
+# 重试同一采样时必须复用原 message_id。message_id 重复会静默幂等；采样时间不严格递增会收到 error 40002。
+
+### Metrics: latest fixed-width snapshot
+GET {{baseUrl}}/api/servers/{{serverId}}/metrics/latest
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-metrics-latest
+
+### Metrics: fixed-width history
+GET {{baseUrl}}/api/servers/{{serverId}}/metrics?start_time=2026-07-21T00:00:00Z&end_time=2026-07-21T23:59:59Z&page=1&page_size=20
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-metrics-history
+
+### Alerts: create rule (admin only)
+POST {{baseUrl}}/api/alerts/rules
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-alert-create-rule
+
+{
+  "server_id": 1,
+  "metric": "cpu",
+  "operator": ">",
+  "threshold_value": 80,
+  "level": "warning"
+}
+
+### Alerts: create general rule (null server_id matches all servers)
+POST {{baseUrl}}/api/alerts/rules
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-alert-create-general-rule
+
+{
+  "metric": "memory",
+  "operator": ">=",
+  "threshold_value": 90,
+  "level": "critical"
+}
+
+### Alerts: list rules
+GET {{baseUrl}}/api/alerts/rules
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-alert-list-rules
+
+### Alerts: update rule
+PUT {{baseUrl}}/api/alerts/rules/1
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+X-Correlation-ID: local-alert-update-rule
+
+{
+  "threshold_value": 90,
+  "level": "critical",
+  "enabled": true
+}
+
+### Alerts: delete rule (soft delete)
+DELETE {{baseUrl}}/api/alerts/rules/1
+Authorization: Bearer {{adminToken}}
+X-Correlation-ID: local-alert-delete-rule
+
+### Alerts: list records (paginated)
+GET {{baseUrl}}/api/alerts/records?server_id=1&status=unread&page=1&page_size=20
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-alert-list-records
+
+### Alerts: mark record as read
+PUT {{baseUrl}}/api/alerts/records/1/read
+Authorization: Bearer {{userToken}}
+X-Correlation-ID: local-alert-mark-read

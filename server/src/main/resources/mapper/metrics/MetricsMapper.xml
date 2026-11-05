@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.metrics.mapper.MetricsMapper">
+    <resultMap id="MetricsResultMap" type="cloide.server.module.metrics.entity.MetricsEntity">
+        <id column="id" property="id"/>
+        <result column="server_id" property="serverId"/>
+        <result column="cpu_percent" property="cpuPercent"/>
+        <result column="memory_percent" property="memoryPercent"/>
+        <result column="memory_used" property="memoryUsed"/>
+        <result column="memory_total" property="memoryTotal"/>
+        <result column="disk_percent" property="diskPercent"/>
+        <result column="disk_used" property="diskUsed"/>
+        <result column="disk_total" property="diskTotal"/>
+        <result column="net_rx" property="netRx"/>
+        <result column="net_tx" property="netTx"/>
+        <result column="temperature" property="temperature"/>
+        <result column="load_avg" property="loadAvg"/>
+        <result column="collected_at" property="collectedAt"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <sql id="MetricColumns">id, server_id, cpu_percent, memory_percent, memory_used, memory_total,
+        disk_percent, disk_used, disk_total, net_rx, net_tx, temperature, load_avg, collected_at, created_at</sql>
+    <insert id="insertMetric" useGeneratedKeys="true" keyProperty="metric.id">
+        INSERT INTO metrics (server_id, cpu_percent, memory_percent, memory_used, memory_total,
+            disk_percent, disk_used, disk_total, net_rx, net_tx, temperature, load_avg, collected_at)
+        VALUES (#{metric.serverId}, #{metric.cpuPercent}, #{metric.memoryPercent}, #{metric.memoryUsed},
+            #{metric.memoryTotal}, #{metric.diskPercent}, #{metric.diskUsed}, #{metric.diskTotal},
+            #{metric.netRx}, #{metric.netTx}, #{metric.temperature}, #{metric.loadAvg}, #{metric.collectedAt})
+    </insert>
+    <insert id="insertIngestion" useGeneratedKeys="true" keyProperty="ingestion.id">
+        INSERT INTO metrics_ingestions (server_id, message_id, collected_at)
+        VALUES (#{ingestion.serverId}, #{ingestion.messageId}, #{ingestion.collectedAt})
+    </insert>
+    <select id="selectLatestCollectedAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(collected_at) FROM metrics WHERE server_id = #{serverId}
+    </select>
+    <select id="selectLatestByServerId" resultMap="MetricsResultMap">
+        SELECT <include refid="MetricColumns"/> FROM metrics
+        WHERE server_id = #{serverId} ORDER BY collected_at DESC, id DESC LIMIT 1
+    </select>
+    <select id="selectHistory" resultMap="MetricsResultMap">
+        SELECT <include refid="MetricColumns"/> FROM metrics
+        WHERE server_id = #{serverId}
+          AND collected_at &gt;= #{startTime} AND collected_at &lt;= #{endTime}
+        ORDER BY collected_at DESC, id DESC
+    </select>
+</mapper>

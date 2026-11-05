@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="cloide"/>
+
+    <property name="CONSOLE_LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [request_id=%X{request_id:-}] [correlation_id=%X{correlation_id:-}] %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- 仅 local profile 输出应用 DEBUG 日志；其他环境级别统一由 application-*.yml 管理，
+         避免遗漏覆盖时向生产输出 SQL 参数、SSH 指纹、Webhook URL 等敏感内容。 -->
+    <springProfile name="local">
+        <logger name="cloide.server" level="DEBUG"/>
+    </springProfile>
+    <logger name="cloide.server.module.auth.mapper" level="INFO"/>
+</configuration>

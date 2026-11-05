@@ -1,0 +1,244 @@
+package cloide.server.module.server.controller;
+
+import static org.hamcrest.Matchers.blankOrNullString;
+import static org.hamcrest.Matchers.not;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import cloide.server.common.BusinessException;
+import cloide.server.common.ErrorCode;
+import cloide.server.common.GlobalExceptionHandler;
+import cloide.server.common.RequestIdFilter;
+import cloide.server.module.auth.entity.UserEntity;
+import cloide.server.module.auth.mapper.AuthBootstrapStateMapper;
+import cloide.server.module.auth.mapper.UserMapper;
+import cloide.server.module.metrics.mapper.MetricsCleanupMapper;
+import cloide.server.module.alert.mapper.AlertNotificationCleanupMapper;
+import cloide.server.module.metrics.outbox.OutboxCleanupMapper;
+import cloide.server.module.metrics.mapper.IngestionCleanupMapper;
+import cloide.server.module.metrics.outbox.OutboxMapper;
+import cloide.server.module.metrics.mapper.MetricsMapper;
+import cloide.server.module.server.mapper.ServerMapper;
+import cloide.server.module.server.mapper.SshTestHistoryMapper;
+import cloide.server.module.server.service.AgentTokenService;
+import cloide.server.module.server.vo.AgentTokenVo;
+import cloide.server.security.JwtTokenService;
+import cloide.server.security.SecurityConfig;
+import cloide.server.security.SecurityErrorHandler;
+import cloide.server.module.alert.mapper.AlertNotificationMapper;
+import cloide.server.module.alert.mapper.AlertRuleMapper;
+import cloide.server.module.alert.consume.ConsumeRecordMapper;
+import cloide.server.module.alert.consume.ConsumeRecordCleanupMapper;
+import cloide.server.module.alert.mapper.AlertRecordMapper;
+import cloide.server.module.alert.mapper.AlertRecordCleanupMapper;
+import cloide.server.module.alert.mapper.AlertStateMapper;
+import cloide.server.module.terminal.mapper.TerminalSessionMapper;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+/** 验证 Agent Token 管理接口的管理员权限、参数校验和一次性响应契约。 */
+@ActiveProfiles("test")
+@WebMvcTest(AgentTokenController.class)
+@Import({SecurityConfig.class, SecurityErrorHandler.class, RequestIdFilter.class, GlobalExceptionHandler.class})
+class AgentTokenControllerTests {
+
+    private static final String ADMIN_TOKEN = "admin-token";
+    private static final String USER_TOKEN = "user-token";
+    private static final String AUTHORIZATION = "Authorization";
+    private static final String ADMIN_BEARER = "Bearer " + ADMIN_TOKEN;
+    private static final String USER_BEARER = "Bearer " + USER_TOKEN;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private AgentTokenService agentTokenService;
+
+    @MockitoBean
+    private JwtTokenService jwtTokenService;
+
+    @MockitoBean
+    private UserMapper userMapper;
+
+    // 替代全局 Mapper 扫描注册的初始化状态 Mapper。
+    @MockitoBean
+    private AuthBootstrapStateMapper authBootstrapStateMapper;
+
+    // 替代全局 Mapper 扫描注册的服务器 Mapper。
+    @MockitoBean
+    private ServerMapper serverMapper;
+
+    // 替代全局 Mapper 扫描注册的 SSH 测试历史 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private SshTestHistoryMapper sshTestHistoryMapper;
+
+    // 替代全局 Mapper 扫描注册的指标 Mapper。
+    @MockitoBean
+    private MetricsMapper metricsMapper;
+
+    // 替代全局 Mapper 扫描注册的指标清理 Mapper。
+    @MockitoBean
+    private MetricsCleanupMapper metricsCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的指标幂等接收记录清理 Mapper。
+    @MockitoBean
+    private IngestionCleanupMapper ingestionCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的 Outbox 清理 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private OutboxCleanupMapper outboxCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的通知投递清理 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private AlertNotificationCleanupMapper alertNotificationCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的消费幂等记录清理 Mapper。
+    @MockitoBean
+    private ConsumeRecordCleanupMapper consumeRecordCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的告警记录清理 Mapper。
+    @MockitoBean
+    private AlertRecordCleanupMapper alertRecordCleanupMapper;
+
+
+    // 使用模拟告警 Mapper，避免告警模块 Mapper 扫描后创建真实 MyBatis 会话依赖。
+    @MockitoBean
+    private AlertRuleMapper alertRuleMapper;
+
+    @MockitoBean
+    private AlertRecordMapper alertRecordMapper;
+    @MockitoBean
+    private AlertNotificationMapper alertNotificationMapper;
+
+    @MockitoBean
+    private AlertStateMapper alertStateMapper;
+
+    // 使用模拟终端 Mapper，避免 V12 Mapper 扫描后创建真实 MyBatis 会话依赖。
+    @MockitoBean
+    private TerminalSessionMapper terminalSessionMapper;
+    @MockitoBean
+    private OutboxMapper outboxMapper;
+    @MockitoBean
+    private ConsumeRecordMapper consumeRecordMapper;
+
+
+    /** 验证管理员可注册和轮换 Token，明文仅出现在这两个一次性响应中。 */
+    @Test
+    void adminShouldRegisterAndRotateAgentToken() throws Exception {
+        authenticateAdmin();
+        when(agentTokenService.register(1L)).thenReturn(token("registered-token"));
+        when(agentTokenService.rotate(1L)).thenReturn(token("rotated-token"));
+
+        mockMvc.perform(post("/api/servers/1/agent/register").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.data.server_id").value(1))
+                .andExpect(jsonPath("$.data.agent_token").value("registered-token"));
+
+        mockMvc.perform(post("/api/servers/1/agent/rotate").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.agent_token").value("rotated-token"));
+    }
+
+    /** 验证管理员撤销 Token 后返回统一空成功响应。 */
+    @Test
+    void adminShouldRevokeAgentToken() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(delete("/api/servers/1/agent/revoke").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(agentTokenService).revoke(1L);
+    }
+
+    /** 验证普通已审核用户不能管理 Agent Token。 */
+    @Test
+    void approvedUserShouldBeForbidden() throws Exception {
+        authenticateUser();
+
+        mockMvc.perform(post("/api/servers/1/agent/register").header(AUTHORIZATION, USER_BEARER))
+                .andExpect(status().isForbidden())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(40300));
+
+        verify(agentTokenService, never()).register(any());
+    }
+
+    /** 验证未认证请求由安全链返回统一 401。 */
+    @Test
+    void unauthenticatedRequestShouldReturnUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/servers/1/agent/register"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /** 验证非法服务器 ID 在进入 Service 前被拒绝。 */
+    @Test
+    void nonPositiveServerIdShouldReturnInvalidParameter() throws Exception {
+        authenticateAdmin();
+
+        mockMvc.perform(post("/api/servers/0/agent/register").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40002));
+
+        verify(agentTokenService, never()).register(any());
+    }
+
+    /** 验证 Service 的资源不存在错误保持统一 404 契约。 */
+    @Test
+    void missingServerShouldReturnNotFound() throws Exception {
+        authenticateAdmin();
+        doThrow(new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)).when(agentTokenService).revoke(99L);
+
+        mockMvc.perform(delete("/api/servers/99/agent/revoke").header(AUTHORIZATION, ADMIN_BEARER))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    private void authenticateAdmin() {
+        when(jwtTokenService.parseToken(ADMIN_TOKEN))
+                .thenReturn(new JwtTokenService.ParsedToken(1L, "admin", "admin-token-id", java.time.Instant.parse("2026-08-18T00:00:00Z")));
+        when(userMapper.selectAuthenticationUserById(1L)).thenReturn(authenticationUser(1L, "admin", "admin"));
+    }
+
+    private void authenticateUser() {
+        when(jwtTokenService.parseToken(USER_TOKEN))
+                .thenReturn(new JwtTokenService.ParsedToken(2L, "approved_user", "user-token-id", java.time.Instant.parse("2026-08-18T00:00:00Z")));
+        when(userMapper.selectAuthenticationUserById(2L))
+                .thenReturn(authenticationUser(2L, "approved_user", "user"));
+    }
+
+    private UserEntity authenticationUser(Long id, String username, String role) {
+        UserEntity user = new UserEntity();
+        user.setId(id);
+        user.setUsername(username);
+        user.setRole(role);
+        user.setReviewStatus("approved");
+        user.setCreatedAt(LocalDateTime.now());
+        return user;
+    }
+
+    private AgentTokenVo token(String value) {
+        return new AgentTokenVo(1L, value,
+                OffsetDateTime.of(2026, 7, 23, 0, 0, 0, 0, ZoneOffset.UTC));
+    }
+}

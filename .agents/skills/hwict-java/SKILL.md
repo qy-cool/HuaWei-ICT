@@ -7,14 +7,22 @@ user-invocable: true
 
 # HuaWei-ICT Java 后端规范
 
-本项目 Java 后端遵循《阿里巴巴 Java 开发手册》、Spring Boot 3.x 常规实践和项目需求文档中的约束。
+本项目 Java 后端遵循《阿里巴巴 Java 开发手册》、Spring Boot 常规实践和项目需求文档中的约束。
+
+后端目标基线（版本以 `server/pom.xml` 为准）：Java 21、Spring Boot 4.1.2、
+MyBatis-Plus 3.5.18（`mybatis-plus-spring-boot4-starter`）、springdoc-openapi 3.2.x、
+Flyway、Jakarta Validation；升级依赖前先按骨架计划的兼容性检查执行并记录结果。
+
+迁移期例外（2026-10-29）：`server/` 由 cloide-shell 迁入，当前实际为
+Spring Boot 3.4.13 / MyBatis-Plus 3.5.12 / springdoc 2.8.9 / OpenAPI 3.0.3，
+本轮不做升级；实际版本始终以 `server/pom.xml` 为准。
 
 ## 1. 命名规范
 
 - 类名使用 UpperCamelCase，例如 `ServerController`、`JwtTokenService`
 - 方法名、参数名、局部变量名使用 lowerCamelCase
 - 常量使用 UPPER_SNAKE_CASE
-- 包名使用小写单词，主包为 `com.hwict.server`
+- 包名使用小写单词，主包为 `cloide.server`
 - **布尔变量不使用 `is` 前缀**，例如使用 `enabled`，不使用 `isEnabled`
 
 ## 2. 注释规范

@@ -45,8 +45,9 @@ user-invocable: true
   可访问性与结构报错。
 - `TabsTrigger` 必须在 `TabsList` 内；`Avatar` 必须带 `AvatarFallback`；
   Item 类内容放进对应 Group 容器。
-- 组件基座以 `web/components.json` 为准：Radix 系用 `asChild`，Base UI 系用
-  `render`；本项目当前按 Base UI 写（与 `hwict-react` 一致），不要混用。
+- 组件基座以 `web/components.json` 为准：本项目已确认 Base UI，统一用
+  `render`；`render` 换成 `a`/`Link` 时同时传 `nativeButton={false}`。
+  Radix 教程里的 `asChild` 不要带进来，也不要混用两套写法。
 - 按钮无 isPending 属性：加载态用 `Spinner` + `disabled` 组合表达。
 
 ## 4. 用组件、不自制
@@ -70,7 +71,8 @@ user-invocable: true
 
 ## 7. CLI 要点（工程骨架建立后生效）
 
+- shadcn 自 2026-07 起默认 Base UI；`init` 若提示选择基座，选 Base UI。
 - 添加组件：`pnpm dlx shadcn@latest add <component>`；添加后**审查生成
-  文件**再使用。
+  文件**；出现 `asChild` 或 Radix 专有属性，说明基座选错，先修配置再继续。
 - 更新组件先用 `--dry-run` / `--diff` 查看差异，未经队长同意不得
   `--overwrite`；不从 GitHub 手抓组件文件。

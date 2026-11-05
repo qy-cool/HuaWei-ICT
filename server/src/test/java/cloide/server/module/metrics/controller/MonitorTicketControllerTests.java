@@ -1,0 +1,180 @@
+package cloide.server.module.metrics.controller;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import static org.hamcrest.Matchers.blankOrNullString;
+import static org.hamcrest.Matchers.not;
+
+import cloide.server.common.GlobalExceptionHandler;
+import cloide.server.common.RequestIdFilter;
+import cloide.server.module.auth.entity.UserEntity;
+import cloide.server.module.auth.mapper.AuthBootstrapStateMapper;
+import cloide.server.module.auth.mapper.UserMapper;
+import cloide.server.module.metrics.mapper.IngestionCleanupMapper;
+import cloide.server.module.metrics.mapper.MetricsCleanupMapper;
+import cloide.server.module.metrics.mapper.MetricsMapper;
+import cloide.server.module.metrics.outbox.OutboxCleanupMapper;
+import cloide.server.module.metrics.outbox.OutboxMapper;
+import cloide.server.module.alert.mapper.AlertNotificationCleanupMapper;
+import cloide.server.module.alert.mapper.AlertNotificationMapper;
+import cloide.server.module.alert.mapper.AlertRecordCleanupMapper;
+import cloide.server.module.alert.mapper.AlertRecordMapper;
+import cloide.server.module.alert.mapper.AlertRuleMapper;
+import cloide.server.module.alert.mapper.AlertStateMapper;
+import cloide.server.module.alert.consume.ConsumeRecordCleanupMapper;
+import cloide.server.module.alert.consume.ConsumeRecordMapper;
+import cloide.server.module.server.mapper.ServerMapper;
+import cloide.server.module.server.mapper.SshTestHistoryMapper;
+import cloide.server.module.terminal.mapper.TerminalSessionMapper;
+import cloide.server.security.JwtTokenService;
+import cloide.server.security.SecurityConfig;
+import cloide.server.security.SecurityErrorHandler;
+import cloide.server.websocket.MonitorTicketService;
+import cloide.server.websocket.MonitorTicketVo;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+/** 验证 Monitor ticket 签发接口的访问矩阵：任一认证用户可签发，未认证请求被安全链拦截。 */
+@ActiveProfiles("test")
+@WebMvcTest(MonitorTicketController.class)
+@Import({SecurityConfig.class, SecurityErrorHandler.class, RequestIdFilter.class, GlobalExceptionHandler.class})
+class MonitorTicketControllerTests {
+
+    private static final String USER_TOKEN = "user-token";
+    private static final String USER_BEARER = "Bearer " + USER_TOKEN;
+    private static final String AUTHORIZATION = "Authorization";
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private MonitorTicketService monitorTicketService;
+
+    @MockitoBean
+    private JwtTokenService jwtTokenService;
+
+    @MockitoBean
+    private UserMapper userMapper;
+
+    // 替代全局 Mapper 扫描注册的初始化状态 Mapper。
+    @MockitoBean
+    private AuthBootstrapStateMapper authBootstrapStateMapper;
+
+    // 替代全局 Mapper 扫描注册的服务器 Mapper。
+    @MockitoBean
+    private ServerMapper serverMapper;
+
+    // 替代全局 Mapper 扫描注册的 SSH 测试历史 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private SshTestHistoryMapper sshTestHistoryMapper;
+
+    // 替代全局 Mapper 扫描注册的指标 Mapper。
+    @MockitoBean
+    private MetricsMapper metricsMapper;
+
+    // 替代全局 Mapper 扫描注册的指标清理 Mapper。
+    @MockitoBean
+    private MetricsCleanupMapper metricsCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的指标幂等接收记录清理 Mapper。
+    @MockitoBean
+    private IngestionCleanupMapper ingestionCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的 Outbox 清理 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private OutboxCleanupMapper outboxCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的通知投递清理 Mapper，避免加载真实 MyBatis 会话工厂。
+    @MockitoBean
+    private AlertNotificationCleanupMapper alertNotificationCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的消费幂等记录清理 Mapper。
+    @MockitoBean
+    private ConsumeRecordCleanupMapper consumeRecordCleanupMapper;
+
+    // 替代全局 Mapper 扫描注册的告警记录清理 Mapper。
+    @MockitoBean
+    private AlertRecordCleanupMapper alertRecordCleanupMapper;
+
+    // 使用模拟告警 Mapper，避免告警模块 Mapper 扫描后创建真实 MyBatis 会话依赖。
+    @MockitoBean
+    private AlertRuleMapper alertRuleMapper;
+
+    @MockitoBean
+    private AlertRecordMapper alertRecordMapper;
+    @MockitoBean
+    private AlertNotificationMapper alertNotificationMapper;
+
+    @MockitoBean
+    private AlertStateMapper alertStateMapper;
+
+    // 使用模拟终端 Mapper，避免 V12 Mapper 扫描后创建真实 MyBatis 会话依赖。
+    @MockitoBean
+    private TerminalSessionMapper terminalSessionMapper;
+    @MockitoBean
+    private OutboxMapper outboxMapper;
+    @MockitoBean
+    private ConsumeRecordMapper consumeRecordMapper;
+
+    /** 验证非 admin 的已审核用户可签发 ticket，且认证用户快照贯通到业务层。 */
+    @Test
+    void approvedUserShouldIssueMonitorTicket() throws Exception {
+        authenticateUser();
+        when(monitorTicketService.issue(any()))
+                .thenReturn(new MonitorTicketVo("one-time-ticket",
+                        OffsetDateTime.parse("2026-09-16T00:00:30Z")));
+
+        mockMvc.perform(post("/api/ws/monitor-ticket").header(AUTHORIZATION, USER_BEARER))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", not(blankOrNullString())))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.ticket").value("one-time-ticket"))
+                .andExpect(jsonPath("$.data.expires_at").value("2026-09-16T00:00:30Z"));
+
+        // 参数贯通断言：安全链解析出的认证用户快照（ID=2 的 approved user）原样传入签发业务。
+        verify(monitorTicketService).issue(argThat(
+                user -> user != null && Long.valueOf(2L).equals(user.id())));
+    }
+
+    /** 验证未认证请求被安全链以 401 拦截，且不触达 ticket 签发业务。 */
+    @Test
+    void unauthenticatedShouldReturn401() throws Exception {
+        mockMvc.perform(post("/api/ws/monitor-ticket"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(monitorTicketService);
+    }
+
+    private void authenticateUser() {
+        when(jwtTokenService.parseToken(USER_TOKEN))
+                .thenReturn(new JwtTokenService.ParsedToken(2L, "approved_user", "user-token-id",
+                        java.time.Instant.parse("2026-08-18T00:00:00Z")));
+        when(userMapper.selectAuthenticationUserById(2L)).thenReturn(authenticationUser());
+    }
+
+    /** 构造非 admin 的已审核普通用户，覆盖「任一认证用户可读」访问矩阵。 */
+    private UserEntity authenticationUser() {
+        UserEntity user = new UserEntity();
+        user.setId(2L);
+        user.setUsername("approved_user");
+        user.setRole("user");
+        user.setReviewStatus("approved");
+        user.setCreatedAt(LocalDateTime.now());
+        return user;
+    }
+}

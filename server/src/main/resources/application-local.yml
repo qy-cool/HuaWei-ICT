@@ -1,0 +1,11 @@
+logging:
+  level:
+    cloide.server: DEBUG
+    cloide.server.module.auth.mapper: INFO
+    org.springframework.security: INFO
+    org.mybatis: INFO
+
+spring:
+  flyway:
+    enabled: true
+

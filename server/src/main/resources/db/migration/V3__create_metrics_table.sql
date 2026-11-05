@@ -1,0 +1,20 @@
+CREATE TABLE `metrics` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `server_id` BIGINT UNSIGNED NOT NULL COMMENT '服务器ID',
+    `cpu_percent` DECIMAL(5,2) DEFAULT NULL COMMENT 'CPU 使用率',
+    `memory_percent` DECIMAL(5,2) DEFAULT NULL COMMENT '内存使用率',
+    `memory_used` BIGINT UNSIGNED DEFAULT NULL COMMENT '已用内存字节数',
+    `memory_total` BIGINT UNSIGNED DEFAULT NULL COMMENT '总内存字节数',
+    `disk_percent` DECIMAL(5,2) DEFAULT NULL COMMENT '磁盘使用率',
+    `disk_used` BIGINT UNSIGNED DEFAULT NULL COMMENT '已用磁盘字节数',
+    `disk_total` BIGINT UNSIGNED DEFAULT NULL COMMENT '总磁盘字节数',
+    `net_rx` BIGINT UNSIGNED DEFAULT NULL COMMENT '网络接收字节数',
+    `net_tx` BIGINT UNSIGNED DEFAULT NULL COMMENT '网络发送字节数',
+    `temperature` DECIMAL(6,2) DEFAULT NULL COMMENT '温度',
+    `load_avg` DECIMAL(10,2) DEFAULT NULL COMMENT '系统负载',
+    `collected_at` DATETIME NOT NULL COMMENT '指标采集时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_metrics_collected_at` (`collected_at`),
+    KEY `idx_metrics_server_time` (`server_id`, `collected_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='指标数据表';

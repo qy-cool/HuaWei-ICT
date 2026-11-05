@@ -12,8 +12,10 @@ user-invocable: true
 
 ## 1. 技术与目录
 
-- 技术栈：React + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui（Base UI）
-  + TanStack Router / Query / Form / Table + Zustand；包管理器使用 pnpm。
+- 技术栈：React 19 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui（Base UI）
+  + TanStack Router / Query / Form / Table + Zustand + axios + zod + ECharts +
+  lucide-react + sonner；包管理器使用 pnpm，版本以 `web/package.json` 与
+  lockfile 为准。
 - 文件系统路由位于 `src/routes`；路由专属组件和逻辑放相邻的 `-components`、
   `-lib` 目录（如 `src/routes/analysis/-components/`），共用组件和逻辑放
   `src/components`、`src/lib` 或 `src/hooks`。
@@ -56,7 +58,10 @@ web/src/
   `header`/`nav`/`main`/`aside`/`footer`，内容块用 `section`/`article`，
   列表用 `ul`/`ol`/`li`，键值信息用 `dl`/`dt`/`dd`。
 - 可交互元素必须是真正的 `button`/`a`，不给 `div`/`span` 挂 `onClick`；
-  需要时用 shadcn 的 `asChild` 渲染成语义正确的标签。
+  需要把组件渲染成语义标签时用 Base UI 的 `render` 属性；改成 `a`/`Link`
+  时必须同时传 `nativeButton={false}`，例如
+  `<Button nativeButton={false} render={<Link to="/analysis" />}>查看</Button>`；
+  Radix 的 `asChild` 不适用于本项目。
 - 标题使用 `h1`–`h6` 严格按层级递进，不跳级；仅调视觉大小时用 Tailwind
   字号类，不借标题标签凑样式。
 - 全局样式与设计 token 只在 `src/styles.css`；用语义颜色和 `cn()` 合并
@@ -99,8 +104,9 @@ web/src/
   Router/Query 规则；CI 用 `pnpm lint` 跑全量。
 - 格式化：oxfmt + `.oxfmtrc.json`，`pnpm format` 改格式、`pnpm format:check`
   只检查。
-- shadcn 配置：`components.json`（样式 new-york、语义色 token、`@/` 别名），
-  生成件落在 `src/components/ui/`。
+- shadcn 配置：`components.json`（样式 new-york、语义色 token、`@/` 别名、
+  Base UI 基座），生成件落在 `src/components/ui/`；`init`/`add` 后检查生成件
+  使用 `render`，出现 `asChild` 说明基座选错。
 - TypeScript：`strict: true`、路径别名 `@/* -> src/*`、
   `tsconfig.app.json` / `tsconfig.node.json` 分离。
 - Vite：`@` 别名 + TanStack Router 插件生成 `src/routeTree.gen.ts`，构建产物

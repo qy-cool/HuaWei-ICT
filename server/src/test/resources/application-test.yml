@@ -1,0 +1,16 @@
+cloide:
+  jwt:
+    secret: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+    expire-hours: 72
+  security:
+    aes-gcm-key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+  ssh:
+    allowed-ports: 22,2222
+    allowed-cidrs: 127.0.0.1/32,::1/128
+  terminal:
+    cleanup-cron: "0 0 * * * ?"
+  rabbitmq:
+    enabled: false
+  cors:
+    # 当前没有 Web 前端，测试上下文也使用空白名单，覆盖无 CORS 启动路径。
+    allowed-origins: []

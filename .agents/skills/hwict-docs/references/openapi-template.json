@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.1.0",
   "info": {
     "title": "HuaWei-ICT API",
     "description": "HuaWei-ICT 后端 REST 契约模板。新增模块时复制本文件为 openapi-{模块名}.json，再补 paths 与按需的 schema。",
@@ -42,8 +42,7 @@
             "description": "面向调用方的可执行提示，不包含敏感值"
           },
           "data": {
-            "nullable": true,
-            "description": "业务数据，按具体接口定义"
+            "description": "业务数据，按具体接口定义；3.1 不再使用 nullable"
           }
         }
       },

@@ -17,8 +17,34 @@ hs_err_pid*
 # 环境与凭据（严禁入库）
 .env
 .env.*
+!.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Android / Gradle 构建产物
+.gradle/
+.kotlin/
+local.properties
+captures/
+*.apk
+*.aab
+*.hprof
+
+# Go 构建产物
+agent/bin/
+
+# 本地参考仓库与迁移源（不得嵌入父仓库）
+harness/
+ide/
+cloide-shell/
+
+# 本地临时数据
+backup/
+tmp/
 
 # IDE 与系统临时文件
 .idea/

@@ -1,0 +1,86 @@
+package cloide.app.data
+
+import android.content.Context
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import cloide.app.data.model.CurrentUser
+import cloide.app.data.security.TokenCipher
+import cloide.app.data.security.TokenCipherFormat
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+private val Context.dataStore by preferencesDataStore(name = "cloide_session")
+
+/**
+ * 登录会话持久化（DataStore Preferences）：
+ * 保存加密后的 JWT 与当前用户快照，登录态恢复与 401 清会话都经由这里。
+ * token 经 [TokenCipher]（Android Keystore AES-GCM）加密落盘，防止备份/root 读取泄露。
+ */
+@Singleton
+class SessionStore @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val tokenCipher: TokenCipher,
+) {
+
+    private val dataStore = context.dataStore
+
+    private object Keys {
+        val TOKEN = stringPreferencesKey("token")
+        val USER_ID = stringPreferencesKey("user_id")
+        val USERNAME = stringPreferencesKey("username")
+        val ROLE = stringPreferencesKey("role")
+        val REVIEW_STATUS = stringPreferencesKey("review_status")
+        val CREATED_AT = stringPreferencesKey("created_at")
+    }
+
+    /** 当前 JWT，无会话时为 null。 */
+    val token: Flow<String?> = dataStore.data.map { prefs -> prefs[Keys.TOKEN]?.let(::readToken) }
+
+    /** 当前会话快照。 */
+    val session: Flow<cloide.app.data.model.Session?> = dataStore.data.map { prefs ->
+        val token = prefs[Keys.TOKEN]?.let(::readToken) ?: return@map null
+        val userId = prefs[Keys.USER_ID] ?: return@map null
+        cloide.app.data.model.Session(
+            token = token,
+            user = CurrentUser(
+                id = userId.toLongOrNull() ?: 0L,
+                username = prefs[Keys.USERNAME].orEmpty(),
+                role = prefs[Keys.ROLE].orEmpty(),
+                reviewStatus = prefs[Keys.REVIEW_STATUS].orEmpty(),
+                createdAt = prefs[Keys.CREATED_AT].orEmpty(),
+            ),
+        )
+    }
+
+    /** 同步读取当前 token（供 OkHttp 拦截器使用）。 */
+    suspend fun currentToken(): String? = dataStore.data.first()[Keys.TOKEN]?.let(::readToken)
+
+    /** 保存登录成功后的会话（token 加密后落盘）。 */
+    suspend fun saveSession(token: String, user: CurrentUser) {
+        dataStore.edit { prefs ->
+            prefs[Keys.TOKEN] = tokenCipher.encrypt(token)
+            prefs[Keys.USER_ID] = user.id.toString()
+            prefs[Keys.USERNAME] = user.username
+            prefs[Keys.ROLE] = user.role
+            prefs[Keys.REVIEW_STATUS] = user.reviewStatus
+            prefs[Keys.CREATED_AT] = user.createdAt
+        }
+    }
+
+    /** 清除会话（登出 / 401 会话失效）。 */
+    suspend fun clear() {
+        dataStore.edit { it.clear() }
+    }
+
+    /**
+     * 读取持久化 token：带 `enc:v1:` 前缀走 Keystore 解密（解密失败视为无会话）；
+     * 无前缀为旧版本明文，兼容返回，待下次登录保存时覆盖为密文。
+     */
+    private fun readToken(stored: String): String? =
+        if (stored.startsWith(TokenCipherFormat.PREFIX)) tokenCipher.decrypt(stored) else stored
+}

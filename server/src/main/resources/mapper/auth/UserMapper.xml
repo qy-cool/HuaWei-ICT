@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cloide.server.module.auth.mapper.UserMapper">
+
+    <resultMap id="UserResultMap" type="cloide.server.module.auth.entity.UserEntity">
+        <id column="id" property="id"/>
+        <result column="username" property="username"/>
+        <result column="password_hash" property="passwordHash"/>
+        <result column="role" property="role"/>
+        <result column="review_status" property="reviewStatus"/>
+        <result column="reviewed_by" property="reviewedBy"/>
+        <result column="reviewed_at" property="reviewedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="UserColumns">
+        id,
+        username,
+        password_hash,
+        role,
+        review_status,
+        reviewed_by,
+        reviewed_at,
+        created_at,
+        updated_at
+    </sql>
+
+    <sql id="SafeUserColumns">
+        id,
+        username,
+        role,
+        review_status,
+        reviewed_by,
+        reviewed_at,
+        created_at,
+        updated_at
+    </sql>
+
+    <select id="selectByUsername"
+            parameterType="java.lang.String"
+            resultMap="UserResultMap">
+        SELECT
+        <include refid="UserColumns"/>
+        FROM users
+        WHERE username = #{username}
+    </select>
+
+    <select id="selectPendingUsers" resultMap="UserResultMap">
+        SELECT
+        <include refid="SafeUserColumns"/>
+        FROM users
+        WHERE role = 'user'
+          AND review_status = 'pending'
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <select id="selectReviewUserById"
+            parameterType="java.lang.Long"
+            resultMap="UserResultMap">
+        SELECT
+        <include refid="SafeUserColumns"/>
+        FROM users
+        WHERE id = #{userId}
+    </select>
+
+    <select id="selectPageUsers" resultMap="UserResultMap">
+        SELECT
+        <include refid="SafeUserColumns"/>
+        FROM users
+        WHERE role = 'user'
+        <if test="status != null and status != ''">
+            AND review_status = #{status}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND username LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY created_at DESC, id DESC
+    </select>
+
+    <update id="updateReviewStatus">
+        UPDATE users
+        SET
+            review_status = #{reviewStatus},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = #{reviewedAt}
+        WHERE id = #{userId}
+          AND role = 'user'
+          AND review_status = 'pending'
+    </update>
+
+    <select id="selectAuthenticationUserById"
+            parameterType="java.lang.Long"
+            resultMap="UserResultMap">
+        SELECT
+            id,
+            username,
+            role,
+            review_status,
+            reviewed_by,
+            reviewed_at,
+            created_at,
+            updated_at
+        FROM users
+        WHERE id = #{userId}
+    </select>
+</mapper>

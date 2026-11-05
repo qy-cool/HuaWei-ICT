@@ -40,8 +40,8 @@
 当改动新增或扩大工具类能力（加解密、重试、限流、审批流、报表、日期处理、
 HTTP 客户端封装等）时，必须检查：
 
-1. 已引入依赖（Spring 生态、MyBatis、shadcn/ui、TanStack 系列、ECharts 等）
-   或官方扩展点是否已提供该能力。
+1. 项目已选型或已引入的依赖（当前基线：Spring 生态、MyBatis-Plus、
+   shadcn/ui、TanStack 系列、ECharts 等）或官方扩展点是否已提供该能力。
 2. 是否有证据表明升级依赖或使用扩展点仍无法满足明确需求，而不是为了
    绕过暂时的集成困难建立长期平行实现。
 3. 新实现是否只拥有编排、配置、资源预算与用户体验，把领域事实保留在
@@ -60,9 +60,13 @@ HTTP 客户端封装等）时，必须检查：
 
 ## HuaWei-ICT 特别边界
 
-- 后端工程固定为 `server/`，包结构 `com.hwict.server/`
+- 后端工程固定为 `server/`，包结构 `cloide.server/`
   下按 config/common/security/module/client 分层；业务模块在 `module/`
   下按 controller/service/mapper/entity/dto/vo 组织。
+- Go Agent 固定为 `agent/`：不持有数据库凭据；只通过环境变量读取后端地址
+  与 Agent Token；Linux PTY 与命令执行默认关闭。
+- Android 固定为 `android/`：不硬编码后端地址；release 构建必须通过
+  `-PBASE_URL` / `-PWS_URL` 注入；keystore 不入库。
 - **OpenAPI JSON（`docs/openapi/`）是 REST 契约唯一事实源**：
   改接口必须同步契约，前端 `src/types/<module>.ts` 类型定义与之对齐
   （细则见 `hwict-react`）。
