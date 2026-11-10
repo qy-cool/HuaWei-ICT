@@ -7,6 +7,7 @@
 | 手册 | 适用场景 |
 |---|---|
 | [cloide-shell-Server-部署安装手册.md](./cloide-shell-Server-部署安装手册.md) | 从零安装（MySQL/RabbitMQ/JAR/Nginx）、启停、健康检查、首次验收清单 |
+| [华为云DevSpace-部署手册.md](./华为云DevSpace-部署手册.md) | 华为云 DevSpace 容器（无 systemd/Docker）单机部署、反向隧道、公网入口与 MaaS 接入 |
 | [cloide-shell-升级与回滚手册.md](./cloide-shell-升级与回滚手册.md) | 版本升级流程、回滚决策矩阵（JAR 可回滚 / 数据库不可回滚） |
 | [cloide-shell-备份与恢复手册.md](./cloide-shell-备份与恢复手册.md) | 数据库 + 密钥备份、恢复、演练 |
 | [cloide-shell-安全检查手册.md](./cloide-shell-安全检查手册.md) | 端口/数据库/RabbitMQ/密钥/TLS 安全基线 + 上线前检查表 |
