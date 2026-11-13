@@ -16,10 +16,12 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class MonitorHandshakeInterceptor implements HandshakeInterceptor {
 
     private final MonitorTicketService monitorTicketService;
+    private final LegacyMonitorAccess access;
 
     /** 注入 ticket 服务。 */
-    public MonitorHandshakeInterceptor(MonitorTicketService monitorTicketService) {
+    public MonitorHandshakeInterceptor(MonitorTicketService monitorTicketService, LegacyMonitorAccess access) {
         this.monitorTicketService = monitorTicketService;
+        this.access = access;
     }
 
     /** 验证 ticket 并保存认证用户到握手属性，拒绝时记录原因并返回 401。 */
@@ -30,12 +32,16 @@ public class MonitorHandshakeInterceptor implements HandshakeInterceptor {
                 .build().getQueryParams().getFirst("ticket");
         try {
             AuthenticatedUser user = monitorTicketService.consume(ticket);
+            if (!access.allowed(user)) {
+                response.setStatusCode(HttpStatus.FORBIDDEN);
+                return false;
+            }
             attributes.put("authenticated_user", user);
             return true;
         } catch (BusinessException exception) {
             // 拒绝留痕，但不输出 ticket 值本身。
             log.warn("monitor ticket rejected, reason={}", exception.getMessage());
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
+            response.setStatusCode(exception.getErrorCode().getHttpStatus());
             return false;
         }
     }

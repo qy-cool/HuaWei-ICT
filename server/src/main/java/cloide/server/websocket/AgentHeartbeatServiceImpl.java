@@ -97,9 +97,10 @@ public class AgentHeartbeatServiceImpl implements AgentHeartbeatService {
                 // 注册表仍指向该会话时先收口中继：isCurrent 判定通过，向浏览器推 closed 帧并收口元数据；
                 // 随后 remove 与关闭 socket 触发的 afterConnectionClosed 因绑定已清空而幂等。
                 terminalRelayLifecycleService.closeAgentSessions(session);
-                int offlineTransitioned = serverMapper.markAgentOffline(session.serverId(), session.lastHeartbeatAt());
-                if (offlineTransitioned == 1) {
-                    publish(session.serverId(), "offline", "offline", session.lastHeartbeatAt());
+                if (connectionRegistry.clustered()) {
+                    connectionRegistry.withOwnership(session, () -> markOfflineOnDisconnect(session));
+                } else {
+                    markOfflineOnDisconnect(session);
                 }
                 connectionRegistry.remove(session);
                 if (session.socketSession().isOpen()) {

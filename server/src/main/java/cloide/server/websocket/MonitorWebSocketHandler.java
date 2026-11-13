@@ -11,11 +11,13 @@ import cloide.server.security.AuthenticatedUser;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -27,9 +29,7 @@ import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorato
  *
  * <p>当前授权策略：
  * <ul>
- *   <li>指标订阅：admin 或 review_status=approved 的已认证用户均可订阅任意存在的服务器指标。
- *       上游 JWT 过滤器强制要求所有通过认证的用户 review_status=approved，故此处 approved 判断恒为真，
- *       实际起作用的是 role=admin 的分支；该判断保留以明确授权意图，便于后续按服务器粒度收紧。</li>
+ *   <li>旧单团队模式允许已审核用户读指标；项目隔离模式要求当前身份为已审核平台管理员。</li>
  *   <li>终端通道：与 REST 面 SSH 操作一致，仅 admin 可对服务器打开交互式终端会话；
  *       普通用户发送 terminal.* 帧回 40302 error 帧并保留连接。</li>
  * </ul></p>
@@ -46,6 +46,7 @@ public class MonitorWebSocketHandler extends TextWebSocketHandler {
     private final TerminalMessageRateLimiter terminalMessageRateLimiter;
     private final MonitorSessionTerminationService terminationService;
     private final AppProperties appProperties;
+    private final LegacyMonitorAccess access;
     private final Map<String, MonitorWebSocketSession> sessions = new ConcurrentHashMap<>();
 
     /** 注入 JSON、服务器权限查询和订阅注册表。 */
@@ -54,7 +55,7 @@ public class MonitorWebSocketHandler extends TextWebSocketHandler {
             MonitorSubscriptionRegistry registry, Clock clock, TerminalMonitorRelayService terminalRelayService,
             TerminalRelayLifecycleService terminalRelayLifecycleService,
             TerminalMessageRateLimiter terminalMessageRateLimiter, MonitorSessionTerminationService terminationService,
-            AppProperties appProperties) {
+            AppProperties appProperties, LegacyMonitorAccess access) {
         this.objectMapper = objectMapper;
         this.serverMapper = serverMapper;
         this.registry = registry;
@@ -64,11 +65,13 @@ public class MonitorWebSocketHandler extends TextWebSocketHandler {
         this.terminalMessageRateLimiter = terminalMessageRateLimiter;
         this.terminationService = terminationService;
         this.appProperties = appProperties;
+        this.access = access;
     }
 
     MonitorWebSocketHandler(ObjectMapper objectMapper, ServerMapper serverMapper,
             MonitorSubscriptionRegistry registry, Clock clock) {
-        this(objectMapper, serverMapper, registry, clock, null, null, null, null, new AppProperties());
+        this(objectMapper, serverMapper, registry, clock, null, null, null, null,
+                new AppProperties(), new LegacyMonitorAccess(false, null));
     }
 
     /** 保持既有隔离测试可按终端中继依赖构造 Handler。 */
@@ -77,14 +80,14 @@ public class MonitorWebSocketHandler extends TextWebSocketHandler {
             TerminalRelayLifecycleService terminalRelayLifecycleService,
             TerminalMessageRateLimiter terminalMessageRateLimiter) {
         this(objectMapper, serverMapper, registry, clock, terminalRelayService, terminalRelayLifecycleService,
-                terminalMessageRateLimiter, null, new AppProperties());
+                terminalMessageRateLimiter, null, new AppProperties(), new LegacyMonitorAccess(false, null));
     }
 
     /** 从握手属性取得用户身份并注册连接。 */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
         Object principal = session.getAttributes().get("authenticated_user");
-        if (!(principal instanceof AuthenticatedUser user)) {
+        if (!(principal instanceof AuthenticatedUser user) || !access.allowed(user)) {
             session.close(CloseStatus.POLICY_VIOLATION);
             return;
         }
@@ -103,6 +106,10 @@ public class MonitorWebSocketHandler extends TextWebSocketHandler {
         MonitorWebSocketSession monitorSession = sessions.get(session.getId());
         if (monitorSession == null) {
             session.close(CloseStatus.POLICY_VIOLATION);
+            return;
+        }
+        if (!access.allowed(monitorSession.user())) {
+            closeRevoked(monitorSession);
             return;
         }
         JsonNode body;
@@ -180,6 +187,30 @@ public class MonitorWebSocketHandler extends TextWebSocketHandler {
             terminateNormally(monitorSession);
             if (terminationService == null && terminalMessageRateLimiter != null) {
                 terminalMessageRateLimiter.release(monitorSession);
+            }
+        }
+    }
+
+    /** 被动接收指标的连接也定期复核，按同一管理员合并本次数据库查询。 */
+    @Scheduled(fixedDelay = 10000)
+    public void recheckIdleSessions() throws IOException {
+        if (!access.enabled()) {
+            return;
+        }
+        Map<Long, Boolean> approved = new HashMap<>();
+        for (MonitorWebSocketSession session : sessions.values()) {
+            if (!approved.computeIfAbsent(session.user().id(), ignored -> access.allowed(session.user()))) {
+                closeRevoked(session);
+            }
+        }
+    }
+
+    private void closeRevoked(MonitorWebSocketSession session) throws IOException {
+        if (sessions.remove(session.socketSession().getId(), session)) {
+            try {
+                terminateNormally(session);
+            } finally {
+                session.socketSession().close(CloseStatus.POLICY_VIOLATION);
             }
         }
     }
