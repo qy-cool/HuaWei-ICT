@@ -24,6 +24,8 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(40400, "resource not found", HttpStatus.NOT_FOUND),
     TERMINAL_SESSION_NOT_FOUND(40403, "terminal session not found", HttpStatus.NOT_FOUND),
     RESOURCE_CONFLICT(40900, "resource conflict", HttpStatus.CONFLICT),
+    GITHUB_APP_NOT_CONFIGURED(50307, "GitHub App configuration unavailable", HttpStatus.SERVICE_UNAVAILABLE),
+    GITHUB_API_UNAVAILABLE(50308, "GitHub request not confirmed; retry the same operation", HttpStatus.SERVICE_UNAVAILABLE),
     SSH_HOST_KEY_NOT_CONFIRMED(40901, "ssh host key not confirmed", HttpStatus.CONFLICT),
     SSH_HOST_KEY_MISMATCH(40902, "ssh host key mismatch", HttpStatus.CONFLICT),
     TERMINAL_SESSION_STATE_CONFLICT(40903, "terminal session state conflict", HttpStatus.CONFLICT),
