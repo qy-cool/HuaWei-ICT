@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cloide 项目部署清单",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "project",
+    "services",
+    "release"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "cloide.dev/v1alpha1"
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "services": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 128,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "java-jar",
+              "static-tar",
+              "postgresql",
+              "redis",
+              "rabbitmq"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "build": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "test": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "artifact": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "health": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "dependencies": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            }
+          },
+          "secretRefs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            }
+          },
+          "storage": {
+            "type": "string"
+          },
+          "recoveryCheck": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "java-jar",
+                    "static-tar"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "source",
+                "build",
+                "artifact",
+                "health"
+              ]
+            },
+            "else": {
+              "required": [
+                "storage",
+                "recoveryCheck"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "release": {
+      "type": "object",
+      "required": [
+        "order",
+        "migration",
+        "retainVersions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "order": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          }
+        },
+        "retainVersions": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 100
+        },
+        "migration": {
+          "enum": [
+            "expand-contract",
+            "manual-review"
+          ]
+        }
+      }
+    }
+  }
+}
