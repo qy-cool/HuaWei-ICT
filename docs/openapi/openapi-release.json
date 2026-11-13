@@ -1,0 +1,1173 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "项目制品、发布与节点证据",
+    "version": "1.0.0"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/projects/{projectId}/artifacts": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "uploadProjectArtifact",
+        "summary": "上传原始制品字节并关联成功作业，按作业、类型、摘要幂等",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "java-jar",
+                "static-tar"
+              ]
+            }
+          },
+          {
+            "name": "X-Content-SHA256",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Artifact"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listProjectArtifacts",
+        "summary": "按项目列出最近 100 项制品",
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Artifact"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/artifacts/{artifactId}/content": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "artifactId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "downloadProjectArtifact",
+        "summary": "校验登记大小及摘要后返回原始字节",
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/environments/{environment}/releases": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "environment",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "dev",
+              "test",
+              "prod"
+            ]
+          }
+        }
+      ],
+      "post": {
+        "operationId": "createProjectRelease",
+        "summary": "串行申请发布。生产须由管理员选择构建节点登记的制品，且已取得同服务同制品的测试健康回执",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Deploy"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Release"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listEnvironmentReleases",
+        "summary": "查看最近 100 次发布及实际节点证据",
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Release"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/environments/{environment}/releases/{releaseId}/rollback": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "environment",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "dev",
+              "test",
+              "prod"
+            ]
+          }
+        },
+        {
+          "name": "releaseId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "rollbackProjectRelease",
+        "summary": "为当前健康版本创建新的回滚代次",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Rollback"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Release"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/environments/{environment}/releases/{releaseId}/cancel": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "environment",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "dev",
+              "test",
+              "prod"
+            ]
+          }
+        },
+        {
+          "name": "releaseId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "cancelQueuedRelease",
+        "summary": "取消尚未认领的发布",
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Release"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/environments/{environment}/releases/{releaseId}/events": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "environment",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "dev",
+              "test",
+              "prod"
+            ]
+          }
+        },
+        {
+          "name": "releaseId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listReleaseEvidence",
+        "summary": "按游标先后列出发布审计事件",
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReleaseEvent"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/release-agent/next": {
+      "get": {
+        "operationId": "claimNodeRelease",
+        "summary": "节点认领待执行发布；无可认领任务时 data 为 null。三个筛选项须一起提供或一起省略",
+        "security": [
+          {
+            "nodeToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "serverId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dev",
+                "test",
+                "prod"
+              ]
+            }
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Release"
+                        }
+                      ],
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/release-agent/{releaseId}/content": {
+      "parameters": [
+        {
+          "name": "releaseId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "pullNodeReleaseBytes",
+        "summary": "授权目标节点下载已认领版本",
+        "security": [
+          {
+            "nodeToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "serverId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    },
+    "/api/release-agent/{releaseId}/receipt": {
+      "parameters": [
+        {
+          "name": "releaseId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "confirmNodeRelease",
+        "summary": "持久记录节点回执；完全相同的终态重放可重新确认",
+        "security": [
+          {
+            "nodeToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "serverId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已完成",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、大小或内容摘要无效"
+          },
+          "401": {
+            "description": "身份认证失败"
+          },
+          "403": {
+            "description": "权限或节点分配不足"
+          },
+          "404": {
+            "description": "指定范围内未找到资源"
+          },
+          "409": {
+            "description": "状态冲突、数据损坏、幂等冲突或未满足提升条件"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "nodeToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Agent-Token"
+      }
+    },
+    "schemas": {
+      "Artifact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "java-jar",
+              "static-tar"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "byteCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sourceNodeId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "已认证、实际产生制品的构建节点；人工上传为 null。"
+          },
+          "uploadedBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "UTC DATETIME，精确至微秒"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "runId",
+          "repository",
+          "commitSha",
+          "kind",
+          "sha256",
+          "byteCount",
+          "uploadedBy",
+          "createdAt"
+        ]
+      },
+      "Release": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "dev",
+              "test",
+              "prod"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "deploy",
+              "rollback"
+            ]
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "java-jar",
+              "static-tar"
+            ]
+          },
+          "previousHealthyId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "rollbackOf": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "applying",
+              "healthy",
+              "failed",
+              "uncertain",
+              "cancelled"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "UTC DATETIME，精确至微秒"
+          },
+          "claimedAt": {
+            "type": "string",
+            "description": "UTC DATETIME，精确至微秒",
+            "nullable": true
+          },
+          "reportedAt": {
+            "type": "string",
+            "description": "UTC DATETIME，精确至微秒",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "environment",
+          "service",
+          "serverId",
+          "generation",
+          "action",
+          "artifactId",
+          "sha256",
+          "kind",
+          "previousHealthyId",
+          "rollbackOf",
+          "status",
+          "evidence",
+          "requestedBy",
+          "createdAt",
+          "claimedAt",
+          "reportedAt"
+        ]
+      },
+      "ReleaseEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "applying",
+              "healthy",
+              "failed",
+              "uncertain",
+              "cancelled"
+            ]
+          },
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "user",
+              "node",
+              "system"
+            ]
+          },
+          "actorId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "UTC DATETIME，精确至微秒"
+          }
+        },
+        "required": [
+          "seq",
+          "status",
+          "actorType",
+          "actorId",
+          "detail",
+          "createdAt"
+        ]
+      },
+      "Deploy": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          }
+        },
+        "required": [
+          "requestId",
+          "artifactId",
+          "serverId",
+          "service"
+        ]
+      },
+      "Rollback": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "requestId"
+        ]
+      },
+      "Receipt": {
+        "type": "object",
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "failed",
+              "uncertain"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "sha256",
+          "status",
+          "evidence"
+        ]
+      }
+    }
+  }
+}

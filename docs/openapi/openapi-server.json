@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "cloide-shell Server Management API",
-    "description": "Authoritative contract for secure server management. JSON property names use snake_case. Credential plaintext and ciphertext are request-only implementation concerns and are never returned by any response.",
+    "description": "Authoritative contract for secure server management. JSON property names use snake_case. Credential plaintext and ciphertext are request-only implementation concerns and are never returned by any response. 项目隔离模式（PROJECT_ISOLATION_ENABLED=true）将本契约中的全局接口限制为平台管理员。",
     "version": "0.3.1"
   },
   "servers": [
@@ -29,7 +29,7 @@
           "servers"
         ],
         "summary": "List servers",
-        "description": "Available to any authenticated user. Returns non-deleted servers without credential plaintext or ciphertext.",
+        "description": "In single-team mode any authenticated user may access this resource; project isolation requires a platform administrator. Returns non-deleted servers without credential plaintext or ciphertext.",
         "operationId": "listServers",
         "parameters": [
           {
@@ -52,6 +52,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Server page returned",
             "headers": {
@@ -172,7 +175,7 @@
           "servers"
         ],
         "summary": "Get server",
-        "description": "Available to any authenticated user. Returns a non-deleted server without credential plaintext or ciphertext.",
+        "description": "In single-team mode any authenticated user may access this resource; project isolation requires a platform administrator. Returns a non-deleted server without credential plaintext or ciphertext.",
         "operationId": "getServer",
         "parameters": [
           {
@@ -183,6 +186,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Server returned",
             "headers": {
@@ -345,7 +351,7 @@
           "servers"
         ],
         "summary": "Get server status snapshot",
-        "description": "Available to any authenticated user. Returns the latest status snapshot stored in the database. It does not trigger and must not be interpreted as a real-time probe.",
+        "description": "In single-team mode any authenticated user may access this resource; project isolation requires a platform administrator. Returns the latest status snapshot stored in the database. It does not trigger and must not be interpreted as a real-time probe.",
         "operationId": "getServerStatus",
         "parameters": [
           {
@@ -356,6 +362,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Stored server status snapshot returned",
             "headers": {
@@ -698,6 +707,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Ticket issued",
             "content": {
@@ -735,6 +747,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Latest metrics",
             "content": {
@@ -775,6 +790,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Latest top-process snapshot (90-second freshness window)",
             "content": {
@@ -815,6 +833,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Latest extended-resource snapshot (90-second freshness window)",
             "content": {
@@ -879,6 +900,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Metrics page",
             "content": {
@@ -919,6 +943,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Recent SSH test history",
             "headers": {
@@ -1807,9 +1834,11 @@
           },
           "ssh_auth_type": {
             "type": "string",
+            "description": "Agent 令牌登记的节点为 none，此时 ssh_host、ssh_user 为空字符串，ssh_port 为 0。",
             "enum": [
               "password",
-              "private_key"
+              "private_key",
+              "none"
             ]
           },
           "status": {

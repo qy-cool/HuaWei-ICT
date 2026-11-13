@@ -1,5 +1,19 @@
 # OpenAPI 契约（cloide-shell REST API）
 
+测试节点的能力单独在项目节点资源下查询。由实际构建节点认证上传的产物另见[构建制品来源](openapi-build.json)，运维入口见[项目运维](openapi-operations.json)。
+
+企业多项目部署在所有中控开启 `PROJECT_ISOLATION_ENABLED=true` 并重启。
+旧的全局服务器、指标、告警、AI、系统和 Monitor ticket API 在此模式限平台管理员。
+下文标为“已认证”且涉及这些全局资源的接口，在项目隔离模式还会对普通成员返回 40300。
+项目成员通过 [项目契约](openapi-project.json) 查询所属环境及节点的 Agent 状态，通过
+[作业契约](openapi-job.json) 查询运行与日志。新安装环境样例开启隔离，旧配置未设置时沿用单团队权限。
+
+浏览器工作区的登记、入场票据和私有代理鉴权见[工作区契约](openapi-workspace.json)。节点部署、域名、会话撤销和连接复核步骤见[工作区接入手册](../../deploy/workspace/README.md)。
+
+项目「服务与告警」列出各环境中节点、发布期望版本、上次健康回执和归属告警。V49 后的告警在触发事务中固定项目和环境；此前无法证明归属的历史记录沿用全局管理入口。告警详情分开显示触发前 30 分钟同节点的发布活动、当时最新健康制品和负责人提供的根因证据。修复从健康制品的仓库和提交建立需确认的编码任务；回滚提交真实发布请求并校验上一健康版本及生产授权。原始监控过期后保留关联处置的最小告警摘要，尚无处置的过期摘要分批清理。[项目维护契约](openapi-operations.json)
+
+项目制品上传、按环境申请发布、健康回执和回滚见[制品与发布契约](openapi-release.json)。GitHub App 的仓库登记、任务分支、PR 和签名事件见[仓库契约](openapi-repository.json)及[企业安装手册](../ops/github-app-repositories.md)。
+
 > 本目录是 cloide-shell 后端 REST API 的权威 OpenAPI 契约源，供 Apifox 导入、前端类型生成、CI 校验与人工查阅使用。
 >
 > **当前版本：OpenAPI 3.0.3（迁移期）**。由旧项目 springdoc 2.8.9 生成；后端升级到 springdoc 3.2.0 后重新生成 3.1.0，不手工改写 `nullable`。
@@ -22,13 +36,15 @@
 |---|---|---|
 | `openapi-system.json` | 系统健康 / 就绪探针 / RabbitMQ consumers 与 queues（公开 + ROLE_ADMIN） | 4 |
 | `openapi-auth.json` | 首管理员初始化状态查询 / 注册（待初始化时须一次性初始化令牌）/ 登录 / 当前用户 / 登出 | 5 路径 / 5 端点操作 |
+| [openapi-coding.json](openapi-coding.json) | 项目编码任务、逐次审批、按游标查询与节点出站收发 | 7 路径 / 8 端点操作 |
+| [openapi-oidc.json](openapi-oidc.json) | 可选企业登录、PKCE 回调及受管本地账号映射 | 4 路径 / 5 端点操作 |
 | `openapi-admin.json` | 管理员用户分页/搜索与单个、批量审核（ROLE_ADMIN） | 5 |
 | `openapi-server.json` | 服务器 CRUD / 状态 / SSH 主机指纹与观察 / SSH 测试与历史 / Agent Token / Monitor Ticket / 指标最新值 / 进程快照 / 扩展资源快照 / 指标历史 | 15 路径 / 18 端点操作 |
 | `openapi-alert.json` | 告警规则 CRUD / 告警记录分页 / 标记已读 / 通知投递历史 / 告警智能解释回看（ROLE_ADMIN + 已认证） | 6 路径 / 8 端点操作 |
 | `openapi-ai.json` | 大模型只读诊断 MVP + 运维问答 F2 + AI 服务商配置 + 告警解释回看 + 定时健康报告 F3（已实现·代码级；admin Bearer；诊断仅白名单脱敏监控摘要，问答仅平台注册只读工具；运行期由 `cloide.ai.enabled` / `cloide.ai.qa.enabled` / `cloide.ai.report.enabled` 门控，默认关闭） | 7 路径 / 9 端点操作 |
 | `openapi-command.json` | AI 命令域 M1 审批制 + M2 自动审批策略 + M2 观察期评审报告（admin Bearer；白名单模板 + 审批状态机 + 审计；运行期由 `cloide.ai.command.enabled` 门控，默认关闭） | 8 路径 / 10 端点操作 |
 
-合计 50 条文档路径 / 59 个端点操作，全部与当前 Java Controller 声明 1:1 对齐（`node scripts/check-openapi.mjs` 严格双向校验）。代码级实现不等于生产验收：命令域 M1 已完成真实 Agent E2E（2026-09-04）；隔离库 MySQL IT 执行与 RC1 门槛仍待完成。
+2026-11-12 的 17 份契约合计 102 条不同路径、122 个端点操作。运行 `node scripts/check-openapi.mjs` 检查 JSON、引用和当前 Java Controller 的双向映射。未来客户端可用这些独立于框架的契约生成项目、节点、作业、日志和发布类型；前端框架由项目负责人选定。上表中原管理与监控接口沿用早期版本，新增工程接口按页首链接进入。真实浏览器、跨机节点执行、恢复与发布结果见[实施与验证记录](../logs/20261112-企业平台实施与验证.md)。
 
 ## 端点索引
 

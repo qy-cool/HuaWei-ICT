@@ -1,0 +1,723 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "浏览器工作区和私有入口鉴权",
+    "version": "1.0.0",
+    "description": "工作区使用预先配置的专用 HTTPS 域名和单独实例。平台不会连接用户提供的 URL。内网网关路由需要独立的代理密钥。"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/projects/{projectId}/workspaces": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listOwnWorkspaces",
+        "summary": "列出本人在该项目可打开的活动工作区",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Workspace"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "角色不支持该操作"
+          },
+          "404": {
+            "description": "资源不可见"
+          }
+        }
+      },
+      "post": {
+        "operationId": "registerWorkspace",
+        "summary": "管理员登记专属工作区；域名保留至永久停用后",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Registration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Workspace"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "角色不支持该操作"
+          },
+          "404": {
+            "description": "资源不可见"
+          },
+          "409": {
+            "description": "工作区域名已占用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/workspaces/{id}/tickets": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "issueWorkspaceTicket",
+        "summary": "所有者领取 60 秒一次性凭据",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Ticket"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "角色不支持该操作"
+          },
+          "404": {
+            "description": "资源不可见"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/workspaces/{id}": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "disableWorkspace",
+        "summary": "管理员永久关闭入口并撤销票据及会话，保留文件",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "角色不支持该操作"
+          },
+          "404": {
+            "description": "资源不可见"
+          }
+        }
+      }
+    },
+    "/api/workspace-gateway/session": {
+      "post": {
+        "operationId": "exchangeWorkspaceCookie",
+        "security": [
+          {
+            "gatewayKey": []
+          }
+        ],
+        "summary": "专用入口传递浏览器表单正文并兑换 host-only cookie",
+        "parameters": [
+          {
+            "name": "X-Cloide-Workspace-Host",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Cloide-Browser-Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+                "pattern": "^ticket=[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "不缓存的同源进入页，会话绝对有效期 30 分钟",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭据无效、已用、过期或域名不匹配"
+          },
+          "403": {
+            "description": "来源或当前授权不匹配"
+          }
+        }
+      }
+    },
+    "/api/workspace-gateway/authorize": {
+      "get": {
+        "operationId": "authorizeWorkspaceRequest",
+        "security": [
+          {
+            "gatewayKey": [],
+            "workspaceCookie": []
+          }
+        ],
+        "summary": "校验网关密钥、工作区域名、会话到期和实时项目授权",
+        "parameters": [
+          {
+            "name": "X-Cloide-Workspace-Host",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "授权仍有效"
+          },
+          "401": {
+            "description": "凭据无效"
+          },
+          "403": {
+            "description": "授权已撤销"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/workspaces/{id}/sleep": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "sleepManagedWorkspace",
+        "summary": "请求工作区休眠，异步等待节点实测",
+        "responses": {
+          "200": {
+            "description": "记录期望状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Workspace"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/workspaces/{id}/wake": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "wakeManagedWorkspace",
+        "summary": "请求工作区恢复，异步等待节点实测",
+        "responses": {
+          "200": {
+            "description": "记录期望状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Workspace"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace-agent/{id}/runtime": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "serverId",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "pollWorkspaceRuntime",
+        "security": [
+          {
+            "nodeToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已核实节点身份及工作区归属",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "serverId": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "projectId": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "hostname": {
+                          "type": "string"
+                        },
+                        "generation": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "desired": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "sleeping",
+                            "observe"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace-agent/{id}/observations": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "serverId",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "reportWorkspaceRuntime",
+        "security": [
+          {
+            "nodeToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已核实节点身份及工作区归属"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "generation",
+                  "state"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "sleeping",
+                      "running",
+                      "failed"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "gatewayKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cloide-Gateway-Key"
+      },
+      "workspaceCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-cloide-workspace"
+      },
+      "nodeToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Agent-Token"
+      }
+    },
+    "schemas": {
+      "Workspace": {
+        "type": "object",
+        "required": [
+          "id",
+          "projectId",
+          "serverId",
+          "ownerId",
+          "name",
+          "hostname",
+          "active",
+          "managed",
+          "generation",
+          "desired",
+          "observed",
+          "observedGeneration",
+          "observedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ownerId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "desired": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "string"
+          },
+          "observedGeneration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "observedAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Registration": {
+        "type": "object",
+        "required": [
+          "name",
+          "slug",
+          "ownerId",
+          "serverId"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "ownerId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "managed": {
+            "type": "boolean",
+            "default": false,
+            "description": "启用固定节点的实际生命周期回执"
+          }
+        }
+      },
+      "Ticket": {
+        "type": "object",
+        "required": [
+          "ticket",
+          "origin",
+          "expiresAt"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "origin": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
+}

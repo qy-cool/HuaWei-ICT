@@ -1,0 +1,953 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "工程编码任务与 Pi 节点",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/projects/{projectId}/coding-tasks": {
+      "post": {
+        "operationId": "createCodingTask",
+        "summary": "创建项目编码任务",
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Create"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listCodingTasks",
+        "summary": "最近 50 项任务",
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Task"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/coding-tasks/{taskId}": {
+      "get": {
+        "operationId": "readCodingTask",
+        "summary": "读取任务和审批状态",
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/coding-tasks/{taskId}/events": {
+      "get": {
+        "operationId": "listCodingEvents",
+        "summary": "按游标读取 64 条编码事件",
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Event"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/coding-tasks/{taskId}/decision": {
+      "post": {
+        "operationId": "decideCodingEdit",
+        "summary": "审批指定变更",
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Decision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/coding-tasks/{taskId}/cancel": {
+      "post": {
+        "operationId": "cancelCodingTask",
+        "summary": "取消任务",
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    },
+    "/api/coding-agent/poll": {
+      "post": {
+        "operationId": "pollCodingTask",
+        "summary": "节点按登记的项目和仓库领取或续租任务",
+        "security": [
+          {
+            "NodeToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Node-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Poll"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Command"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    },
+    "/api/coding-agent/events": {
+      "post": {
+        "operationId": "ackCodingEvent",
+        "summary": "持久记录并确认节点事件",
+        "security": [
+          {
+            "NodeToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Node-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或事件无效"
+          },
+          "401": {
+            "description": "缺少有效凭据"
+          },
+          "403": {
+            "description": "不具备项目或节点权限"
+          },
+          "404": {
+            "description": "项目资源不存在"
+          },
+          "409": {
+            "description": "任务状态、幂等键或授权摘要冲突"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserJWT": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "NodeToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Node-Token"
+      }
+    },
+    "schemas": {
+      "Create": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "baseSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "build",
+              "guarded",
+              "yolo"
+            ]
+          },
+          "plan": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requestId",
+          "serverId",
+          "repository",
+          "baseSha",
+          "prompt"
+        ]
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "baseSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "build",
+              "guarded",
+              "yolo"
+            ]
+          },
+          "plan": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "awaiting_approval",
+              "cancelling",
+              "cancelled",
+              "uncertain",
+              "failed",
+              "ready_for_review"
+            ]
+          },
+          "lastSeq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "approvalId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "decision": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "required": [
+          "taskId",
+          "projectId",
+          "createdBy",
+          "serverId",
+          "repository",
+          "baseSha",
+          "prompt",
+          "mode",
+          "plan",
+          "status",
+          "lastSeq",
+          "approvalId",
+          "decision"
+        ]
+      },
+      "Decision": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "allow": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approvalId",
+          "allow"
+        ]
+      },
+      "Poll": {
+        "type": "object",
+        "properties": {
+          "workerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "workerId",
+          "projectId",
+          "repository"
+        ]
+      },
+      "Receipt": {
+        "type": "object",
+        "properties": {
+          "workerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "event": {
+            "$ref": "#/components/schemas/Payload"
+          }
+        },
+        "required": [
+          "workerId",
+          "taskId",
+          "seq",
+          "event"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "event": {
+            "$ref": "#/components/schemas/Payload"
+          }
+        },
+        "required": [
+          "seq",
+          "event"
+        ]
+      },
+      "Payload": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "started",
+              "text",
+              "approval",
+              "declined",
+              "change",
+              "patch",
+              "finished"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string"
+          },
+          "beforeHash": {
+            "type": "string"
+          },
+          "afterHash": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "Command": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "idle",
+              "continue",
+              "cancel",
+              "stop",
+              "decision"
+            ]
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "baseSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "build",
+              "guarded",
+              "yolo"
+            ]
+          },
+          "plan": {
+            "type": "boolean"
+          },
+          "approvalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "allow": {
+            "type": "boolean"
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "lastSeq": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    }
+  }
+}

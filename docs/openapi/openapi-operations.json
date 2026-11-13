@@ -1,0 +1,601 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "项目服务拓扑与告警处置 API",
+    "version": "1.0.0",
+    "description": "告警触发时冻结项目归属。近时变化只表示同节点相关。人工核实的因果关系、修复工单及回滚记录带发起人和证据。"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/projects/{projectId}/operations/topology": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listProjectServiceTopology",
+        "summary": "列出已分配节点与服务的最近请求制品、上次健康回执",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceNode"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "权限不足"
+          },
+          "404": {
+            "description": "项目或记录不可见"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/operations/alerts": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listProjectOperationsAlerts",
+        "summary": "按原始归属和倒序 ID 查询告警",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Alert"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "权限不足"
+          },
+          "404": {
+            "description": "项目或记录不可见"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/operations/alerts/{alertId}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "in": "path",
+          "name": "alertId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readProjectOperationsAlert",
+        "summary": "查看触发前 30 分钟同节点事件、当时最后健康制品和人工审计",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Detail"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "权限不足"
+          },
+          "404": {
+            "description": "项目或记录不可见"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/operations/alerts/{alertId}/actions": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "in": "path",
+          "name": "alertId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "createProjectAlertAction",
+        "summary": "幂等记录人工归因或从告警发起真实修复/回滚",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Action"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "身份无效"
+          },
+          "403": {
+            "description": "权限不足"
+          },
+          "404": {
+            "description": "项目或记录不可见"
+          },
+          "409": {
+            "description": "请求键复用、源发布不适合此操作、现行版本已变化或其他发布正在进行"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ServiceNode": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nodeName": {
+            "type": "string"
+          },
+          "agentStatus": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string",
+            "nullable": true
+          },
+          "desiredRelease": {
+            "type": "string",
+            "nullable": true
+          },
+          "desiredSha": {
+            "type": "string",
+            "nullable": true
+          },
+          "desiredStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "healthyRelease": {
+            "type": "string",
+            "nullable": true
+          },
+          "healthySha": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastHealthyAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC",
+            "nullable": true
+          }
+        },
+        "required": [
+          "environment",
+          "serverId",
+          "nodeName",
+          "agentStatus",
+          "service",
+          "desiredRelease",
+          "desiredSha",
+          "desiredStatus",
+          "healthyRelease",
+          "healthySha",
+          "lastHealthyAt"
+        ]
+      },
+      "Alert": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "currentValue": {
+            "type": "number"
+          },
+          "thresholdValue": {
+            "type": "number"
+          },
+          "triggeredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "environment",
+          "metric",
+          "level",
+          "status",
+          "currentValue",
+          "thresholdValue",
+          "triggeredAt",
+          "resolvedAt"
+        ]
+      },
+      "Change": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": "string"
+          },
+          "previousHealthyId": {
+            "type": "string",
+            "nullable": true
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC",
+            "nullable": true
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC",
+            "nullable": true
+          },
+          "matchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC"
+          }
+        },
+        "required": [
+          "id",
+          "service",
+          "status",
+          "sha256",
+          "repository",
+          "commitSha",
+          "previousHealthyId",
+          "claimedAt",
+          "reportedAt",
+          "matchedAt"
+        ]
+      },
+      "Action": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actorId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "action": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "buildNode": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "resultId": {
+            "type": "string",
+            "nullable": true
+          },
+          "resultStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC"
+          }
+        },
+        "required": [
+          "id",
+          "alertId",
+          "actorId",
+          "action",
+          "releaseId",
+          "buildNode",
+          "rationale",
+          "resultId",
+          "resultStatus",
+          "createdAt"
+        ]
+      },
+      "ActionRequest": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "repair",
+              "rollback",
+              "confirm_cause"
+            ]
+          },
+          "releaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "buildNode": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "修复时指定开发/测试节点，其余场景留空。"
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          }
+        },
+        "required": [
+          "requestId",
+          "action",
+          "releaseId",
+          "rationale"
+        ]
+      },
+      "Detail": {
+        "type": "object",
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/Alert"
+          },
+          "nearby": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "healthyAtAlert": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        },
+        "required": [
+          "alert",
+          "nearby",
+          "healthyAtAlert",
+          "actions"
+        ]
+      }
+    }
+  }
+}

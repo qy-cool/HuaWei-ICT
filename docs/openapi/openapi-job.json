@@ -1,0 +1,460 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "项目节点作业",
+    "version": "1.0.0"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/projects/{projectId}/runs": {
+      "post": {
+        "operationId": "createProjectRun",
+        "summary": "为预登记仓库指定完整提交并排队测试",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数不符合协议"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "当前用户无项目或节点授权"
+          },
+          "404": {
+            "description": "该项目资源不存在"
+          },
+          "409": {
+            "description": "幂等请求与现有作业冲突"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listProjectRuns",
+        "summary": "获取最近 50 次运行",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数不符合协议"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "当前用户无项目或节点授权"
+          },
+          "404": {
+            "description": "该项目资源不存在"
+          },
+          "409": {
+            "description": "幂等请求与现有作业冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/runs/{jobId}": {
+      "get": {
+        "operationId": "getProjectRun",
+        "summary": "读取作业状态及终态报告",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数不符合协议"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "当前用户无项目或节点授权"
+          },
+          "404": {
+            "description": "该项目资源不存在"
+          },
+          "409": {
+            "description": "幂等请求与现有作业冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/runs/{jobId}/logs": {
+      "get": {
+        "operationId": "getProjectRunLogs",
+        "summary": "按序号获取最多 100 个日志分段",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数不符合协议"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "当前用户无项目或节点授权"
+          },
+          "404": {
+            "description": "该项目资源不存在"
+          },
+          "409": {
+            "description": "幂等请求与现有作业冲突"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/runs/{jobId}/cancel": {
+      "post": {
+        "operationId": "cancelProjectRun",
+        "summary": "取消待派发作业或请求节点结束执行",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数不符合协议"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "当前用户无项目或节点授权"
+          },
+          "404": {
+            "description": "该项目资源不存在"
+          },
+          "409": {
+            "description": "幂等请求与现有作业冲突"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "RunRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "server_id",
+          "repository",
+          "commit_sha"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "server_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "commit_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        }
+      },
+      "ProjectRun": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "server_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "commit_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "dispatched",
+              "running",
+              "cancelling",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "uncertain"
+            ]
+          },
+          "exit_code": {
+            "type": "integer",
+            "nullable": true
+          },
+          "output": {
+            "type": "string",
+            "maxLength": 8192,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "job_id",
+          "project_id",
+          "server_id",
+          "repository",
+          "commit_sha",
+          "status",
+          "created_at"
+        ]
+      },
+      "LogLine": {
+        "type": "object",
+        "required": [
+          "seq",
+          "text"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      },
+      "RunResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProjectRun"
+          }
+        }
+      },
+      "RunListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectRun"
+            }
+          }
+        }
+      },
+      "LogListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          }
+        }
+      }
+    }
+  }
+}
