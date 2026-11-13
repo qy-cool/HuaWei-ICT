@@ -283,7 +283,7 @@ location /cloide/ {
 | 4 | 首管理员状态 | `GET /api/auth/bootstrap-status` → `bootstrapPending=false`（已初始化） |
 | 5 | 登录 | `POST /api/auth/login` → 200 + JWT |
 | 6 | WebSocket 鉴权 | 无 ticket 连接 `/ws/monitor` → 401 |
-| 7 | Agent 在线 | 服务器列表 `susumonitor-box` 在线，指标持续上报 |
+| 7 | Agent 在线 | 服务器列表 `build-box` 在线，指标持续上报 |
 | 8 | 公网入口 | `curl -fsS https://<PUBLIC_DOMAIN>/cloide/api/health` → UP |
 | 9 | 旧站无回归 | 公网机既有站点健康检查仍为 UP |
 
