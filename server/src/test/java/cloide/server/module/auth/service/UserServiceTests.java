@@ -87,7 +87,9 @@ class UserServiceTests {
         verify(passwordEncoder).encode("Password123");
         // 令牌校验发生在行锁事务内且消费写随后执行（批次 8）。
         verify(bootstrapTokenService).verifyAgainst(any(AuthBootstrapStateEntity.class), any());
-        verify(authBootstrapStateMapper).consumeBootstrapToken(any());
+        var order = org.mockito.Mockito.inOrder(authBootstrapStateMapper);
+        order.verify(authBootstrapStateMapper).consumeBootstrapToken(any());
+        order.verify(authBootstrapStateMapper).markAdminInitialized(any(), any());
     }
 
     // 验证后续用户注册后成为待审核的普通用户。
@@ -155,7 +157,6 @@ class UserServiceTests {
             userEntity.setId(1L);
             return 1;
         });
-        when(authBootstrapStateMapper.markAdminInitialized(any(), any())).thenReturn(1);
         when(authBootstrapStateMapper.consumeBootstrapToken(any())).thenReturn(0);
 
         BusinessException exception = assertThrows(
@@ -163,6 +164,7 @@ class UserServiceTests {
                 () -> userService.register(request));
 
         assertEquals(ErrorCode.DATABASE_ERROR, exception.getErrorCode());
+        verify(authBootstrapStateMapper, never()).markAdminInitialized(any(), any());
     }
 
     // 验证首管理员已初始化时令牌字段被忽略（存量部署行为不变）。
@@ -277,6 +279,7 @@ class UserServiceTests {
             userEntity.setId(1L);
             return 1;
         });
+        when(authBootstrapStateMapper.consumeBootstrapToken(any())).thenReturn(1);
         when(authBootstrapStateMapper.markAdminInitialized(any(), any())).thenReturn(0);
 
         BusinessException exception = assertThrows(
