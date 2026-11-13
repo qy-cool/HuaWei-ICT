@@ -2,12 +2,13 @@
 #
 # 公网必须启用 HTTPS/WSS；下方 80 端口块仅用于内网联调或证书签发前临时使用。
 # 只合并 server 块，不要覆盖系统/面板生成的完整 nginx.conf。
-# 本模板不含前端 SPA fallback：cloide-shell 当前没有 Web 前端，根路径保持 404。
+# 本模板仅提供中控后端路由，企业可独立配置自己的客户端。
 
 server {
     listen 80;
     server_name SERVER_IP_OR_DOMAIN;
     client_max_body_size 16m;
+    location / { return 404; }
 
     # Agent 安装包与版本化 release（可选；目录按实际部署调整）
     location /agent/ {
@@ -16,6 +17,20 @@ server {
         try_files $uri =404;
         default_type application/octet-stream;
         add_header Cache-Control "no-store";
+    }
+
+    location ^~ /api/workspace-gateway/ { return 404; }
+
+    # 两个上传入口接受原始制品字节，由中控分别验节点令牌或项目权限。
+    location ~ "^/api/(projects/[0-9]+/artifacts|build-agent/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/artifact)$" {
+        client_max_body_size 128m;
+        proxy_http_version 1.1;
+        proxy_request_buffering off;
+        proxy_pass http://127.0.0.1:18080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location /api/ {

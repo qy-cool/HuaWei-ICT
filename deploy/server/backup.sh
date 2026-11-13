@@ -12,6 +12,7 @@
 #   4) 按保留份数轮换旧备份
 # 失败即非零退出（set -euo pipefail）。
 set -euo pipefail
+umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/cloide}"
 KEEP="${KEEP:-7}"
@@ -45,11 +46,21 @@ if [ -z "$DB_PASSWORD" ]; then
     exit 1
 fi
 
-mkdir -p "$BACKUP_DIR"
+if ! [[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || [ -L "$BACKUP_DIR" ]; then
+    echo "FATAL: 需要私有备份目录和至少一份保留副本" >&2
+    exit 1
+fi
+if [ ! -d "$BACKUP_DIR" ]; then mkdir -p -m 0700 -- "$BACKUP_DIR"; fi
+if [ ! -O "$BACKUP_DIR" ] || [ "$(stat -c %a -- "$BACKUP_DIR")" != 700 ]; then
+    echo "FATAL: 请使用执行者专属的 0700 备份目录，先核对现有目录的所有者和权限" >&2
+    exit 1
+fi
 TS=$(date +%Y%m%d-%H%M%S)
-OUT="$BACKUP_DIR/cloide-${TS}.tar.gz"
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+PENDING=""
+trap 'rm -rf -- "$TMP"; if [ -n "$PENDING" ]; then rm -f -- "$PENDING"; fi' EXIT
+PENDING=$(mktemp -- "$BACKUP_DIR/.pending-XXXXXXXX")
+OUT="$BACKUP_DIR/cloide-${TS}-${PENDING##*.pending-}.tar.gz"
 
 echo "[1/4] 导出数据库 $DB_NAME ..."
 # MYSQL_PWD 只对本次命令生效，避免密码出现在进程列表。
@@ -61,15 +72,17 @@ echo "[2/4] 备份密钥文件 $ENV_FILE ..."
 cp "$ENV_FILE" "$TMP/server.env"
 
 echo "[3/4] 归档并校验 ..."
-tar -czf "$OUT" -C "$TMP" .
-gzip -t "$OUT"
-if [ ! -s "$OUT" ]; then
-    echo "FATAL: 备份文件为空: $OUT" >&2
+tar -czf "$PENDING" -C "$TMP" .
+gzip -t "$PENDING"
+if [ ! -s "$PENDING" ]; then
+    echo "FATAL: 备份文件为空" >&2
     exit 1
 fi
+ln -- "$PENDING" "$OUT"
 
 echo "[4/4] 轮换旧备份（保留 $KEEP 份）..."
-ls -1t "$BACKUP_DIR"/cloide-*.tar.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r rm -f
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'cloide-*.tar.gz' -printf '%T@ %p\0' \
+    | sort -zrn | tail -z -n +"$((KEEP + 1))" | cut -z -d ' ' -f 2- | xargs -0 -r rm -f --
 
 echo "OK: $OUT ($(du -h "$OUT" | cut -f1))"
 echo "提示: 请将备份文件异地/离线留存一份（密钥与数据库同等重要）"
