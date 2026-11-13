@@ -4,7 +4,7 @@
 
 ## 先说结论
 
-cloide 目前单机部署在华为云 DevSpace 盒子（openEuler 22.03 aarch64）上：MySQL 8.0、RabbitMQ 3.9、Redis 4.0、后端和 Agent 全部只监听 127.0.0.1，数据与配置放在 `/root/cloide` 持久盘。公网入口复用 `genhaosan.online` 的证书，通过 `/cloide/` 路径反代到公网机的 SSH 反向隧道，再进入盒子 18080。数据库继续用 MySQL，不在赛前切 PostgreSQL。
+cloide 目前单机部署在华为云 DevSpace 盒子（openEuler 22.03 aarch64）上：MySQL 8.0、RabbitMQ 3.9、Redis 4.0、后端和 Agent 全部只监听 127.0.0.1，数据与配置放在 `/root/cloide` 持久盘。公网入口复用 `control.example.org` 的证书，通过 `/cloide/` 路径反代到公网机的 SSH 反向隧道，再进入盒子 18080。数据库继续用 MySQL，不在赛前切 PostgreSQL。
 
 ## 问题
 
@@ -17,7 +17,7 @@ cloide 目前单机部署在华为云 DevSpace 盒子（openEuler 22.03 aarch64�
 - **MySQL 运行方式**：以 `--user=root` 运行。原因是容器不允许 bind mount，`/root` 启动时被重置为 750，`mysql` 用户无法穿越；这是该 DevSpace 环境的例外，密码仍只存 600 文件。
 - **RabbitMQ**：以 `rabbitmq` 用户运行，数据在 `/var/lib/rabbitmq`（overlay，瞬态）；vhost/user 由 `start-all.sh` 幂等重建，消息本体是瞬态的，Outbox 在 MySQL 中。
 - **启动**：`/root/cloide/start-all.sh` 幂等拉起全部组件；当前容器的 `/start_docker.sh` 已加延迟 30s 的钩子。容器重建导致钩子丢失时，手动执行 `start-all.sh`。
-- **公网入口**：公网机 nginx 在 `genhaosan.online` 的 443 server 块增加 `/cloide/` 与 `/cloide/ws/`，反代到 `127.0.0.1:18082`；盒子用 `ssh -R 127.0.0.1:18082:localhost:18080` 建隧道。旧站 `/api/`、`/ws/` 不受影响。`start-all.sh` 在 222/18082 隧道缺失时会重建，容器重启后公网入口可自愈。
+- **公网入口**：公网机 nginx 在 `control.example.org` 的 443 server 块增加 `/cloide/` 与 `/cloide/ws/`，反代到 `127.0.0.1:18082`；盒子用 `ssh -R 127.0.0.1:18082:localhost:18080` 建隧道。旧站 `/api/`、`/ws/` 不受影响。`start-all.sh` 在 222/18082 隧道缺失时会重建，容器重启后公网入口可自愈。
 - **数据库选型**：继续 MySQL；不切 PostgreSQL。
 
 ### 正确做法
@@ -25,7 +25,7 @@ cloide 目前单机部署在华为云 DevSpace 盒子（openEuler 22.03 aarch64�
 - 部署步骤以仓库 `docs/ops-manual/华为云DevSpace-部署手册.md` 为准；盒子上的 `/root/cloide/DEPLOY.md` 只是运行机副本。
 - 新组件或新端口先确认 127.0.0.1 监听，再决定是否经隧道/nginx 暴露。
 - 修改 `/root/cloide/config/*.env` 后重启对应进程；`start-all.sh` 只补缺失进程，不会重启已健康的服务。
-- 公网入口变更前备份 `/www/server/panel/vhost/nginx/susumonitor.conf`，`nginx -t` 通过后再 reload。
+- 公网入口变更前备份 `/www/server/panel/vhost/nginx/control-host.conf`，`nginx -t` 通过后再 reload。
 
 ### 不要这样做
 
@@ -56,9 +56,9 @@ Compose 和 systemd 都是仓库既有部署方式，但盒子没有 Docker，PI
 
 ## 验证
 
-- `ssh susumonitor-box 'bash /root/cloide/start-all.sh'`
-- `curl -fsS https://genhaosan.online/cloide/api/health`
-- `curl -fsS https://genhaosan.online/cloide/api/ready`
+- `ssh build-box 'bash /root/cloide/start-all.sh'`
+- `curl -fsS https://control.example.org/cloide/api/health`
+- `curl -fsS https://control.example.org/cloide/api/ready`
 - `cd server && ./mvnw test`
 
 ## 适用范围
