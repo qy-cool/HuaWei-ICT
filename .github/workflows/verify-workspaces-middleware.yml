@@ -1,0 +1,41 @@
+name: Verify workspace gateway and middleware recovery
+on:
+  push:
+    branches: [preview, main]
+    paths: ['deploy/workspace/**', 'deploy/middleware/**', '.github/workflows/verify-workspaces-middleware.yml']
+  pull_request:
+    paths: ['deploy/workspace/**', 'deploy/middleware/**', '.github/workflows/verify-workspaces-middleware.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: deploy/workspace/session-guard
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: deploy/workspace/session-guard/go.mod
+          cache: false
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [postgres, redis-cache, redis-persistent, rabbitmq]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python deploy/middleware/smoke.py "${{ matrix.service }}"
