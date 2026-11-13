@@ -16,6 +16,7 @@ import (
 
 	"cloide/agent/internal/collector"
 	"cloide/agent/internal/config"
+	"cloide/agent/internal/jobs"
 	"cloide/agent/internal/metricbuffer"
 	"cloide/agent/internal/reporter"
 	"cloide/agent/internal/wsclient"
@@ -58,6 +59,17 @@ func main() {
 	}
 	metricsReporter := reporter.NewReporter(cfg.ServerID, logger, client, metricsBuffer, newReporterOptions(cfg))
 	commandAgent := newCommandAgent(cfg, client, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	var jobManager *jobs.Manager
+	if cfg.JobManifest != "" {
+		jobManager, err = openRepositoryJobs(ctx, cfg, client, logger)
+		if err != nil {
+			logger.Error("repository test runner initialization failed", "error", err)
+			os.Exit(1)
+		}
+		jobManager.Start()
+	}
 	// 集中消息路由：terminal.* 与 command.* 各自独立子协议，未知类型仅记调试日志。
 	client.SetMessageHandler(func(ctx context.Context, message wsclient.AgentMessage) {
 		switch {
@@ -65,6 +77,10 @@ func main() {
 			terminalAgent.handle(ctx, message)
 		case strings.HasPrefix(message.Type, "command."):
 			commandAgent.handle(ctx, message)
+		case strings.HasPrefix(message.Type, "job.") && jobManager != nil:
+			if err := handleRepositoryJob(jobManager, message); err != nil {
+				logger.Warn("job frame rejected", "type", message.Type, "error", err)
+			}
 		default:
 			logger.Debug("unsupported agent message", "type", message.Type)
 		}
@@ -76,14 +92,16 @@ func main() {
 		return wsclient.NewHeartbeatPayloadWithDeliveryStats(stats.PendingCount, stats.PendingBytes,
 			stats.OldestCollectedAt, stats.DropCount, stats.DeadLetterCount, stats.DeadLetterBytes)
 	})
-	client.SetAuthenticatedHandler(metricsReporter.HandleAuthenticated)
+	client.SetAuthenticatedHandler(func() {
+		metricsReporter.HandleAuthenticated()
+		if jobManager != nil {
+			jobManager.Wake()
+		}
+	})
 	client.SetDisconnectHandler(func() {
 		metricsReporter.HandleDisconnect()
 		terminalAgent.manager.CloseAll("agent_disconnected")
 	})
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	metricsCollector := collector.NewGopsutilCollector()
 	if sampler := collector.NewProcessSampler(cfg.ProcessTopN); sampler != nil {
@@ -93,7 +111,11 @@ func main() {
 	if cfg.ExtendedResources {
 		metricsCollector.SetExtendedSampler(collector.NewExtendedSampler())
 	}
-	if err := runWithDependencies(ctx, cfg, logger, client, metricsCollector, metricsReporter); err != nil {
+	err = runWithDependencies(ctx, cfg, logger, client, metricsCollector, metricsReporter)
+	if jobManager != nil {
+		jobManager.Close()
+	}
+	if err != nil {
 		logger.Error("agent exited with error", "error", err)
 		os.Exit(1)
 	}
