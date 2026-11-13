@@ -1,27 +1,16 @@
-# HuaWei-ICT
+# Cloide 企业自托管 AI 软件工程平台
 
-第十一届华为 ICT 大赛（2026-2027）创新赛 · 赛题 1《基于华为云产品打造 AI
-创新应用》团队开发仓库。
+Cloide 让企业用一套中控管理项目和 Linux 节点。开发者通过项目 API 提交测试任务，节点主动连接中控，项目成员可按提交和节点查询作业结果。工程底座已有身份认证、监控、告警、可靠消息和 Android 客户端。
 
-> 本文件是给队员看的入口导读。**规则的唯一真源是 `AGENTS.md` 与
-> `.agents/skills/`**，本文件如与两者有出入，以后者为准。
+[现状盘点与下一轮开发计划](docs/plans/20261112-现状盘点与下一轮开发计划.md) · [项目总体规划](docs/plans/20261112-企业自托管AI软件工程平台总体规划.md) · [工程工作台使用说明](docs/ops-manual/工程工作台接入.md) · [上游组件登记](docs/tech-summary/upstream-components.md) · [开发规范](AGENTS.md)
 
-## 项目简介
-
-- **赛题**：基于华为云产品（RDS MySQL、Redis、MaaS 大模型服务）打造 AI
-  创新应用，部署在华为云，演示真实可跑（决赛组委复核作品）。
-- **技术栈**：后端 Java 21 + Spring Boot（`server/`，迁移期 3.4.13，目标 4.1.2）；
-  Go 1.23 采集 Agent（`agent/`）；Kotlin 2.0.21 + Jetpack Compose 客户端
-  （`android/`）；前端 React 19 + TypeScript + Vite + Tailwind + shadcn/ui
-  （Base UI，`web/` 待建立）。
-- **赛程**：报名截止 2026-11-30 → 初赛（材料评审）2026-12 →
-  中国总决赛 2027-03 → 全球总决赛 2027-05。
+中控 API 可登记内网节点、按项目运行测试、审阅 Pi 改动、接入浏览器 IDE，并观察制品发布和回滚。PostgreSQL、Redis、RabbitMQ 的恢复工具与订单参考工程可独立运行。已验收的环境和仍待交付的能力见[实施与验证记录](docs/logs/20261112-企业平台实施与验证.md)。
 
 ## 工程底座与迁移说明
 
 本项目以作者此前开源的 **cloide-shell** 服务器监控平台为底座
 迁入：保留 Java 后端、Go Agent、Kotlin Android 三端，**旧 Vue Web 前端不迁入**；
-`web/` 后续按 React 重建。迁移期沿用旧项目版本（Spring Boot 3.4.13 等），升级另议，
+管理台前端框架和开发时间由项目负责人另定。迁移期沿用旧项目版本（Spring Boot 3.4.13 等），升级另议，
 决策见 `.agents/notes/implemented/architecture/2026-10-29-cloide-shell-migration.md`。
 
 ## 环境要求
@@ -29,7 +18,7 @@
 - 后端：JDK 21；`server/` 统一用 Maven Wrapper（Maven 3.9.9）。
 - Agent：Go 1.23（`agent/`）。
 - Android：JDK 17+ 与 Android SDK 36（`android/`）。
-- 前端：Node.js 24 与 pnpm（`web/`，待建立）。
+- 可选编码节点：Node.js 24，使用 worker 的 npm 锁文件安装 Pi。
 - Git：换行由 `.gitattributes` 统一为 LF；Windows 下无需额外配置。
 - 团队本机实测：Java 21.0.12、Maven 3.9.10、Node 24.19、pnpm 11.25、Go 1.27.0。
 
@@ -46,9 +35,10 @@ agent/     Go 1.23 采集 Agent
 android/   Kotlin 2.0.21 + Jetpack Compose 客户端
 deploy/    systemd / nginx / 安装与备份脚本
 scripts/   api-test 端到端回归、OpenAPI 契约校验
-web/       React 前端——待建立
-docs/      plans 开发计划 / openapi 接口契约 / protocol 协议文档 /
-           logs 开发日志 / ops-manual 运维手册 / competition 比赛材料与留痕
+worker/    Pi 编码节点与 IntelliJ Java 符号查询
+examples/  独立的订单业务回归工程
+docs/      plans 产品路线与分阶段计划 / openapi 接口契约 / protocol 协议文档 /
+           logs 开发日志 / ops-manual 运维手册 / competition 历史材料
 .agents/   AI 协作规范（skills/）与架构决策笔记（notes/）
 .github/   CI 工作流、PR 模板、CODEOWNERS
 ```
@@ -112,14 +102,11 @@ docker compose up -d
 
 | 领域 | Skill | 核心要求 |
 |------|-------|----------|
-| 总纲 / 比赛约束 | `hwict-dev` | 技能索引 + 验证矩阵 + 工作流 |
+| 平台开发总纲 | `hwict-dev` | 技能索引 + 验证矩阵 + 工作流 |
 | 后端 Java | `hwict-java` | Controller 只做参数与响应，业务在 Service；凭据只走环境变量 |
 | Go Agent | `hwict-go`（待建） | 地址与 Token 只走环境变量；PTY/命令默认关闭 |
 | Android | `hwict-android`（待建） | 不硬编码后端地址；release 必须注入 `BASE_URL`/`WS_URL` |
-| 前端 React | `hwict-react` | TanStack 路由与数据请求；页面组件就近放；语义化 HTML |
-| UI 组件 | `hwict-shadcn` | 组合优先；只用语义色 token；Dialog 必带 Title |
-| 视觉设计 | `hwict-ui-design` | 设计系统先行（`docs/competition/design-system.md`） |
-| 前端性能 | `hwict-react-perf` | 无依赖请求并行；禁 barrel file |
+| 前端选型 | 由项目负责人另行确定 | 本轮交付后端契约与接入手册 |
 | 数据库 | `hwict-mysql` | **已执行的 Flyway 脚本永不修改**，只新增版本脚本 |
 | 测试 | `hwict-tests` | 每个等待有超时；不依赖真实网络与真实时间 |
 | 提交前自审 | `hwict-review` | 明确要求 review 时触发，P0/P1 才阻塞合并 |
@@ -131,7 +118,7 @@ docker compose up -d
 - Java 后端：`./mvnw test`
 - Go Agent：`go vet ./...` + `go test ./...`
 - Android：`./gradlew :app:testDebugUnitTest`
-- 前端（待建立）：`pnpm typecheck` + `pnpm lint` + `pnpm test`（交付前 `pnpm build`）
+- 工程接口：`node scripts/check-openapi.mjs`，核对管理端与节点端契约。
 - 决策笔记：PR 上由 CI 自动校验
 - 代码 PR：会运行 `Verify Server` / `Verify Agent` / `Verify Android` / `Verify Web`
   （目录不存在时跳过；加入分支保护后作为合并门禁）
@@ -158,4 +145,4 @@ Pages 已上线（2026-10-28，Source = GitHub Actions）；最近一次部署 r
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。迁入的 cloide-shell 底座由作者本人开源；本项目整体按
-MIT 发布。
+MIT 发布，另行引入的第三方组件保留原许可。
