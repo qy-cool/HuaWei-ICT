@@ -32,6 +32,7 @@ import javax.sql.DataSource;
                 + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration"
 })
+@MockitoBean(types = org.springframework.jdbc.core.JdbcTemplate.class)
 class CloideShellApplicationTests {
 
     @MockitoBean

@@ -58,6 +58,7 @@ import static org.hamcrest.Matchers.blankOrNullString;
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration"
 })
 @AutoConfigureMockMvc
+@MockitoBean(types = org.springframework.jdbc.core.JdbcTemplate.class)
 class AdminUserControllerTests {
 
     @Autowired

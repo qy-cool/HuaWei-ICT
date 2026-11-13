@@ -51,6 +51,8 @@ public class ServerServiceImpl implements ServerService {
     private static final ZoneId APPLICATION_ZONE = ZoneOffset.UTC;
 
     private final ServerMapper serverMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cloide.server.websocket.AgentConnectionRegistry connections;
     private final CredentialCipher credentialCipher;
 
     /**
@@ -253,6 +255,7 @@ public class ServerServiceImpl implements ServerService {
                     serverId, LocalDateTime.now(ZoneOffset.UTC), UUID.randomUUID().toString()) != 1) {
                 throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
             }
+            if (connections != null) connections.revokeOnCommit(serverId);
         } catch (DuplicateKeyException exception) {
             throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, exception);
         } catch (DataAccessException exception) {
