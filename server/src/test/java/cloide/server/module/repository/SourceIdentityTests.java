@@ -59,7 +59,7 @@ class SourceIdentityTests {
                 "91",pem.toString(),17,"acme","acme/template","fixture-secret");
         var tx=new TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(db));
         repositories=new RepositoryService(jdbc,access,app,null,null,json,tx);
-        service=new SourceIdentityService(jdbc,access,app,repositories,json,tx);
+        service=new SourceIdentityService(jdbc,access,app,repositories,json,tx,Clock.systemUTC());
         // 默认按平台管理员（id=5）+ 项目 1 成员放行；个别用例里改紧。
         when(access.principal()).thenReturn(new AuthenticatedUser(5L,"operator","admin","approved",null,null));
         link(1,8,"acme","orders","main");

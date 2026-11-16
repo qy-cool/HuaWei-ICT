@@ -8,6 +8,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
@@ -37,6 +40,7 @@ public class SourceIdentityService {
     private final RepositoryService repositories;
     private final ObjectMapper json;
     private final TransactionTemplate tx;
+    private final Clock clock;
 
     private static final String REF_PATTERN="refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}";
     private static final int MAX_REFS=32;
@@ -147,10 +151,12 @@ public class SourceIdentityService {
         return tx.execute(status->{
             repositories.activeBinding(project,remoteId);
             String snapshotId=UUID.randomUUID().toString();
+            // 显式写入 UTC 墙上时间，不依赖 DDL 默认值（默认走会话时区，与列注释“UTC 解析时间”不符）。
             jdbc.update("""
-                    INSERT INTO source_snapshots(snapshot_id,project_id,remote_id,ref,commit_sha,tree_sha,binding_generation,policy_version,created_by)
-                    VALUES (?,?,?,?,?,?,?,?,?)
-                    """,snapshotId,project,remoteId,ref,commitSha,treeSha,generation,policyVersion,access.principal().id());
+                    INSERT INTO source_snapshots(snapshot_id,project_id,remote_id,ref,commit_sha,tree_sha,binding_generation,policy_version,resolved_at,created_by)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """,snapshotId,project,remoteId,ref,commitSha,treeSha,generation,policyVersion,
+                    LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC),access.principal().id());
             try {
                 jdbc.update("""
                         INSERT INTO repository_idempotent_requests(project_id,requester_id,operation,request_id,param_digest,result_id)
@@ -183,12 +189,15 @@ public class SourceIdentityService {
                 """,(rs,i)->new Object[]{
                         rs.getString("snapshot_id"),rs.getLong("remote_id"),rs.getString("ref"),
                         rs.getString("commit_sha"),rs.getString("tree_sha"),rs.getLong("binding_generation"),
-                        rs.getLong("policy_version"),rs.getTimestamp("resolved_at"),rs.getLong("created_by"),
+                        rs.getLong("policy_version"),
+                        // 与写入端对称：把列值按 UTC 墙上时间解释，不依赖连接/JVM 时区。
+                        rs.getObject("resolved_at",LocalDateTime.class).atOffset(ZoneOffset.UTC),
+                        rs.getLong("created_by"),
                         rs.getInt("binding_active")==1},snapshotId,project);
         if (rows.isEmpty()) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         Object[] row=rows.getFirst();
         return new Snapshot((String)row[0],(Long)row[1],(String)row[2],(String)row[3],(String)row[4],
-                (Long)row[5],(Long)row[6],((java.sql.Timestamp)row[7]).toInstant().toString(),(Long)row[8],(Boolean)row[9]);
+                (Long)row[5],(Long)row[6],row[7].toString(),(Long)row[8],(Boolean)row[9]);
     }
 
     private Policy policyAt(long remoteId,long version) {
