@@ -29,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class SourceIdentityTests {
     @TempDir Path temp;
     private static final String X="a".repeat(40), Y="b".repeat(40), TREE_X="c".repeat(40), TREE_Y="d".repeat(40);
+    private static final String R="e".repeat(40), TREE_R="f".repeat(40);
     private final ObjectMapper json=new ObjectMapper();
     private final ProjectAccess access=mock(ProjectAccess.class);
     private final AtomicReference<Throwable> failure=new AtomicReference<>();
@@ -104,12 +105,19 @@ class SourceIdentityTests {
                 batchRefCalls++;
                 reply(e,200,List.of(Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha)))); return;
             }
+            if(p.equals("/repos/acme/orders/git/matching-refs/heads/release/1.2")) {
+                // 含斜杠分支：matching-refs 按前缀返回多条，掺入干扰项验证完整 ref 精确匹配。
+                reply(e,200,List.of(
+                        Map.of("ref","refs/heads/release/1.2","object",Map.of("sha",R)),
+                        Map.of("ref","refs/heads/release/1.2.3","object",Map.of("sha","9".repeat(40))))); return;
+            }
             if(p.equals("/repos/acme/orders/git/ref/heads/main")) {
                 if (mainMissing) { reply(e,404,Map.of("message","Not Found")); return; }
                 reply(e,200,Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha))); return;
             }
             if(p.equals("/repos/acme/orders/git/commits/"+X)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_X))); return; }
             if(p.equals("/repos/acme/orders/git/commits/"+Y)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_Y))); return; }
+            if(p.equals("/repos/acme/orders/git/commits/"+R)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_R))); return; }
             fail("unexpected route "+p);
         } catch(Throwable err) {
             failure.set(err); try {reply(e,500,Map.of());} catch(Exception ignored) {}
@@ -164,6 +172,33 @@ class SourceIdentityTests {
         var error=assertThrows(BusinessException.class,
                 ()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/main",null));
         assertEquals(ErrorCode.SOURCE_REF_NOT_FOUND,error.getErrorCode());
+    }
+
+    @Test void slashBranchSnapshotResolvesViaMatchingRefs() {
+        // 含斜杠分支走 matching-refs 集合端点并按完整 ref 精确匹配，干扰项（release/1.2.3）不命中。
+        service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/release/1.2"));
+        var snapshot=service.snapshot(1,8,UUID.randomUUID(),"refs/heads/release/1.2",null);
+        assertEquals(R,snapshot.commitSha());
+        assertEquals(TREE_R,snapshot.treeSha());
+    }
+
+    @Test void refsReportNullShaForDeletedRemoteBranch() {
+        // 允许清单内的分支在远端已删除：refs 列表以 null SHA 表达，列表不因此失败。
+        service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/main","refs/heads/gone"));
+        var page=service.refs(1,8,null,50);
+        assertEquals(2,page.items().size());
+        assertNull(page.items().stream().filter(i->i.ref().equals("refs/heads/gone")).findFirst().orElseThrow().commitSha());
+    }
+
+    @Test void refsPaginationRoundTripsCursor() {
+        // 分页往返：nextCursor 定位下一页并最终终止（null）。
+        service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/main","refs/heads/release/1.2"));
+        var first=service.refs(1,8,null,1);
+        assertEquals("refs/heads/main",first.items().getFirst().ref());
+        assertNotNull(first.nextCursor());
+        var second=service.refs(1,8,first.nextCursor(),1);
+        assertEquals("refs/heads/release/1.2",second.items().getFirst().ref());
+        assertNull(second.nextCursor());
     }
 
     @Test void policyUpdatesAreOptimisticAndVersioned() {
