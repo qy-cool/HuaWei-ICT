@@ -231,6 +231,11 @@ class SourceIdentityTests {
                 .encodeToString("99999999999999999999".getBytes(StandardCharsets.UTF_8));
         var error2=assertThrows(BusinessException.class,()->service.refs(1,8,overflow,50));
         assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error2.getErrorCode());
+        // 解码为负数 offset：同样按 400 拒绝，不落到 IndexOutOfBoundsException 的 500。
+        String negative=Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("-1".getBytes(StandardCharsets.UTF_8));
+        var error3=assertThrows(BusinessException.class,()->service.refs(1,8,negative,50));
+        assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error3.getErrorCode());
     }
 
     @Test void connectOnExistingActiveBindingIsIdempotent() {

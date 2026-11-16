@@ -201,10 +201,12 @@ public class SourceIdentityService {
         return new Policy(remoteId,version,rows.getFirst());
     }
 
-    /** 游标为本服务签发的不透明 base64url(offset)；非本服务格式一律按参数错误拒绝。 */
+    /** 游标为本服务签发的不透明 base64url(offset)；非本服务格式（含负数偏移）一律按参数错误拒绝。 */
     private static int decodeCursor(String cursor) {
         try {
-            return Math.toIntExact(Long.parseLong(new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8)));
+            int offset=Math.toIntExact(Long.parseLong(new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8)));
+            if (offset<0) throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
+            return offset;
         } catch (IllegalArgumentException | ArithmeticException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
         }
