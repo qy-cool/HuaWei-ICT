@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -24,6 +25,42 @@ func openTest(t *testing.T, dir string, run Execute, send Send) *Manager {
 		t.Fatal(err)
 	}
 	return m
+}
+func TestForeignLedgerFileDisablesExecutorInsteadOfExiting(t *testing.T) {
+	// 异物 .json（非 UUID 文件名）：Open 降级返回 ErrLedgerCorrupt 而非致命错误，
+	// 调用方据此停用执行器并保持 Agent 主体运行（不触发 systemd 重启风暴）。
+	dir := t.TempDir()
+	ledger := recordDirectory(dir, "wss://control.example", 1)
+	if err := os.MkdirAll(ledger, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ledger, "notes.json"), []byte(`{"x":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(context.Background(), dir, "wss://control.example", 1, time.Minute, nil, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if m != nil || !errors.Is(err, ErrLedgerCorrupt) {
+		t.Fatalf("expected degraded open (nil manager, ErrLedgerCorrupt), got manager=%v err=%v", m, err)
+	}
+}
+func TestMixedLedgerCorruptionDegradesWithoutPartialReplay(t *testing.T) {
+	// 好记录 + 损坏内容混合：整体降级（nil manager），不从可能损坏的账本做部分重放。
+	dir := t.TempDir()
+	ledger := recordDirectory(dir, "wss://control.example", 1)
+	if err := os.MkdirAll(ledger, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveRecord(ledger, record{Request: request(), Result: &Result{testID, "succeeded", 0, "ok"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ledger, "0bb1b0d4-0b11-4d11-9c11-1d11e11f11aa.json"), []byte("garbage"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(context.Background(), dir, "wss://control.example", 1, time.Minute, nil, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if m != nil || !errors.Is(err, ErrLedgerCorrupt) {
+		t.Fatalf("expected degraded open (nil manager, ErrLedgerCorrupt), got manager=%v err=%v", m, err)
+	}
 }
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()

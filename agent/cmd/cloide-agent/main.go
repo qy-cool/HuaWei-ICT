@@ -65,10 +65,19 @@ func main() {
 	if cfg.JobManifest != "" {
 		jobManager, err = openRepositoryJobs(ctx, cfg, client, logger)
 		if err != nil {
-			logger.Error("repository test runner initialization failed", "error", err)
-			os.Exit(1)
+			if errors.Is(err, jobs.ErrLedgerCorrupt) {
+				// 记录级账本损坏：停用执行器但保持采集与告警在线（job.* 路由与 job.ready
+				// 均以 jobManager 为空跳过），避免 systemd Restart=on-failure 下的重启风暴；
+				// 清理账本目录并重启后恢复。
+				logger.Error("repository test runner disabled by corrupt job ledger; clean the ledger directory and restart to re-enable", "error", err)
+			} else {
+				logger.Error("repository test runner initialization failed", "error", err)
+				os.Exit(1)
+			}
 		}
-		jobManager.Start()
+		if jobManager != nil {
+			jobManager.Start()
+		}
 	}
 	// 集中消息路由：terminal.* 与 command.* 各自独立子协议，未知类型仅记调试日志。
 	client.SetMessageHandler(func(ctx context.Context, message wsclient.AgentMessage) {

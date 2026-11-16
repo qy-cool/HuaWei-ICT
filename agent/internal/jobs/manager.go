@@ -15,6 +15,10 @@ import (
 type Execute func(context.Context, Request, func(string)) Result
 type Send func(context.Context, string, any) error
 
+// ErrLedgerCorrupt 标记账本的记录级损坏（异物文件名、单条解析或补写失败）。
+// 调用方应停用作业执行器但保持 Agent 主体运行；目录级错误（锁、目录不可读）不是它的实例。
+var ErrLedgerCorrupt = errors.New("job ledger corrupted")
+
 type Manager struct {
 	dir     string
 	lock    *os.File
@@ -57,27 +61,40 @@ func (m *Manager) recover() error {
 	if err != nil {
 		return err
 	}
+	// 记录级损坏降级：异物文件名、单条解析失败或补写失败只停用执行器（Open 返回
+	// ErrLedgerCorrupt，调用方记日志后继续运行），采集与告警不受影响；已收集的
+	// pending 随降级一并作废，不从可能损坏的账本做部分重放。
+	corrupt := false
 	for _, entry := range entries {
 		if filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
 		if !jobID.MatchString(id) {
-			return fmt.Errorf("invalid ledger filename %q", entry.Name())
+			m.logger.Error("job ledger corrupt entry skipped", "file", entry.Name())
+			corrupt = true
+			continue
 		}
 		r, err := readRecord(m.dir, id)
 		if err != nil {
-			return err
+			m.logger.Error("job ledger corrupt record skipped", "job_id", id, "error", err)
+			corrupt = true
+			continue
 		}
 		if r.Result == nil {
 			r.Result = &Result{id, "uncertain", -1, "agent restarted before the test result was durably recorded"}
 			if err = saveRecord(m.dir, r); err != nil {
-				return err
+				m.logger.Error("job ledger uncertain rewrite failed", "job_id", id, "error", err)
+				corrupt = true
+				continue
 			}
 		}
 		if !r.Acked {
 			m.pending[id] = r
 		}
+	}
+	if corrupt {
+		return fmt.Errorf("%w: %s", ErrLedgerCorrupt, m.dir)
 	}
 	return nil
 }
