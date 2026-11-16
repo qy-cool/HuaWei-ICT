@@ -61,7 +61,7 @@ public enum ErrorCode {
     SOURCE_COMMIT_MOVED(40907, "expected commit sha does not match the current ref", HttpStatus.CONFLICT),
     // A1 仓库身份：同名幂等键携带不同业务参数，或策略版本乐观锁冲突。
     SOURCE_REQUEST_CONFLICT(40908, "source request conflict", HttpStatus.CONFLICT),
-    // A1 仓库身份：GitHub 上分支或提交不存在（404），区别于安装权限被撤（403 走 GITHUB_API_UNAVAILABLE）。
+    // A1 仓库身份：GitHub 上分支或提交不存在（404）；安装权限被撤（403）不可重试，按 RESOURCE_CONFLICT 反馈。
     SOURCE_REF_NOT_FOUND(40405, "source ref not found on remote", HttpStatus.NOT_FOUND),
     COMMAND_EXECUTION_TIMEOUT(50402, "command execution timeout", HttpStatus.GATEWAY_TIMEOUT);
 

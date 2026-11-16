@@ -36,7 +36,7 @@ def enroll(endpoint, output, ticket):
                 data=json.dumps({"ticket": ticket}).encode(),
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.build_opener(NoRedirect).open(request, timeout=15) as response:
+            with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect).open(request, timeout=15) as response:
                 data = json.load(response)["data"]
             node_id, token = data["server_id"], data["agent_token"]
             if type(node_id) is not int or node_id < 1 or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
