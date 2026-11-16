@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.*;
 import com.sun.net.httpserver.*;
 import java.io.IOException;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.*;
 import java.time.*;
@@ -198,5 +199,23 @@ class SourceIdentityTests {
         doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(access).requireRead(1);
         var error=assertThrows(BusinessException.class,()->service.snapshotRow(1,snapshot.snapshotId()));
         assertEquals(ErrorCode.FORBIDDEN,error.getErrorCode());
+    }
+
+    @Test void policyVersionRaceMapsDuplicateInsertToConflict() {
+        // 确定性复现并发竞争：另一请求已抢先写入 v1，本请求再写同版本撞主键 → 40908 而非 500。
+        jdbc.update("INSERT INTO repository_source_policies(remote_id,policy_version,allowed_refs,updated_by) VALUES (8,1,'[\"refs/heads/main\"]',5)");
+        var error=assertThrows(BusinessException.class,
+                ()->service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/main")));
+        assertEquals(ErrorCode.SOURCE_REQUEST_CONFLICT,error.getErrorCode());
+    }
+
+    @Test void refsRejectsMalformedCursor() {
+        var error=assertThrows(BusinessException.class,()->service.refs(1,8,"!!!",50));
+        assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error.getErrorCode());
+        // 解码为超 int 的 offset：同样按 400 拒绝。
+        String overflow=Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("99999999999999999999".getBytes(StandardCharsets.UTF_8));
+        var error2=assertThrows(BusinessException.class,()->service.refs(1,8,overflow,50));
+        assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error2.getErrorCode());
     }
 }

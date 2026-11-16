@@ -77,8 +77,13 @@ public class SourceIdentityService {
         Policy current=currentPolicy(project,remoteId);
         if (current.policyVersion()!=expectedVersion) throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT);
         long next=expectedVersion+1;
-        jdbc.update("INSERT INTO repository_source_policies(remote_id,policy_version,allowed_refs,updated_by) VALUES (?,?,?,?)",
-                remoteId,next,encode(normalized),access.principal().id());
+        try {
+            jdbc.update("INSERT INTO repository_source_policies(remote_id,policy_version,allowed_refs,updated_by) VALUES (?,?,?,?)",
+                    remoteId,next,encode(normalized),access.principal().id());
+        } catch (DuplicateKeyException e) {
+            // 并发竞争：另一请求已抢先写入同版本，按幂等键冲突反馈而非内部错误。
+            throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT,e);
+        }
         recordIdempotent(project,operation,requestId,digest,String.valueOf(next));
         return new Policy(remoteId,next,List.copyOf(normalized));
     }
@@ -88,7 +93,7 @@ public class SourceIdentityService {
         access.requireRead(project);
         var binding=repositories.activeBinding(project,remoteId);
         List<String> allowed=currentPolicy(project,remoteId).allowedRefs();
-        int offset=cursor==null?0:Math.toIntExact(Long.parseLong(new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8)));
+        int offset=cursor==null?0:decodeCursor(cursor);
         int size=Math.clamp(limit<=0?50:limit,1,100);
         if (offset>=allowed.size()) return new RefPage(List.of(),null);
         List<RefItem> page=new ArrayList<>();
@@ -184,6 +189,15 @@ public class SourceIdentityService {
         Object[] row=rows.getFirst();
         return new Snapshot((String)row[0],(Long)row[1],(String)row[2],(String)row[3],(String)row[4],
                 (Long)row[5],(Long)row[6],((java.sql.Timestamp)row[7]).toInstant().toString(),(Long)row[8],(Boolean)row[9]);
+    }
+
+    /** 游标为本服务签发的不透明 base64url(offset)；非本服务格式一律按参数错误拒绝。 */
+    private static int decodeCursor(String cursor) {
+        try {
+            return Math.toIntExact(Long.parseLong(new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8)));
+        } catch (IllegalArgumentException | ArithmeticException e) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
+        }
     }
 
     private Policy policyAt(long remoteId,long version) {
