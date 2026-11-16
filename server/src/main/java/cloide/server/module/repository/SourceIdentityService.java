@@ -92,7 +92,7 @@ public class SourceIdentityService {
         return new Policy(remoteId,next,List.copyOf(normalized));
     }
 
-    /** 读时观察：逐个解析当前允许分支；远端已删除的分支以 null SHA 返回，由调用方决定是否继续。 */
+    /** 读时观察：一次批量取回 heads 后按允许清单切页；远端已删除的分支以 null SHA 返回。 */
     public RefPage refs(long project,long remoteId,String cursor,int limit) {
         access.requireRead(project);
         var binding=repositories.activeBinding(project,remoteId);
@@ -100,19 +100,12 @@ public class SourceIdentityService {
         int offset=cursor==null?0:decodeCursor(cursor);
         int size=Math.clamp(limit<=0?50:limit,1,100);
         if (offset>=allowed.size()) return new RefPage(List.of(),null);
-        List<RefItem> page=new ArrayList<>();
         String token=app.token(Map.of("contents","read"),remoteId,null);
+        Map<String,String> heads=app.headRefs(binding.ownerName(),binding.repoName(),token);
+        List<RefItem> page=new ArrayList<>();
         for (int i=offset;i<Math.min(offset+size,allowed.size());i++) {
             String ref=allowed.get(i);
-            String sha;
-            try {
-                sha=app.resolveRef(binding.ownerName(),binding.repoName(),ref,token);
-            } catch (BusinessException e) {
-                // 读时观察：分支可能在允许清单设置后被删除，列表不因此失败；其余错误照常上抛。
-                if (e.getErrorCode()!=ErrorCode.SOURCE_REF_NOT_FOUND) throw e;
-                sha=null;
-            }
-            page.add(new RefItem(ref,sha));
+            page.add(new RefItem(ref,heads.get(ref)));
         }
         String next=offset+size<allowed.size()?Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(String.valueOf(offset+size).getBytes(StandardCharsets.UTF_8)):null;

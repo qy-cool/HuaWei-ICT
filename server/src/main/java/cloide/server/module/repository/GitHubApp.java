@@ -130,6 +130,18 @@ public class GitHubApp {
         return sha;
     }
 
+    /** 一次取回全部 heads 的 ref→SHA 映射；仓库无分支（404）返回空 map。供 refs 列表批量解析。 */
+    java.util.Map<String,String> headRefs(String owner,String repo,String token) {
+        JsonNode list=call("GET","/repos/"+owner+"/"+repo+"/git/matching-refs/heads/",token,null,200,404);
+        java.util.Map<String,String> heads=new java.util.LinkedHashMap<>();
+        if (list.isNull()) return heads;
+        for (JsonNode item:list) {
+            String ref=item.path("ref").asText(), sha=item.path("object").path("sha").asText("");
+            if (ref.startsWith("refs/heads/") && sha.matches("[0-9a-f]{40}")) heads.put(ref,sha);
+        }
+        return heads;
+    }
+
     /** 读取提交的树 SHA；提交对象缺失视为上游数据异常（RESOURCE_CONFLICT），不与分支缺失混淆。 */
     String treeOf(String owner,String repo,String commitSha,String token) {
         JsonNode commit=call("GET","/repos/"+owner+"/"+repo+"/git/commits/"+commitSha,token,null,200,404);

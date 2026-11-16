@@ -41,6 +41,8 @@ class SourceIdentityTests {
     private volatile String mainSha=X;
     /** 夹具控制的树 SHA：与 mainSha 联动。 */
     private volatile String mainTree=TREE_X;
+    /** 批量 heads 端点命中计数：断言 refs 列表单次调用只发一次请求。 */
+    private int batchRefCalls;
 
     @BeforeEach void start() throws Exception {
         var db=new JdbcDataSource();
@@ -95,6 +97,11 @@ class SourceIdentityTests {
                 reply(e,200,Map.of("id",8,"name","orders","owner",Map.of("login","acme"),
                         "private",true,"default_branch","main","description","")); return;
             }
+            if(p.equals("/repos/acme/orders/git/matching-refs/heads/")) {
+                // 批量端点：返回夹具当前的全部 heads（跟随 mainSha，模拟分支前移）。
+                batchRefCalls++;
+                reply(e,200,List.of(Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha)))); return;
+            }
             if(p.equals("/repos/acme/orders/git/ref/heads/main")) {
                 reply(e,200,Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha))); return;
             }
@@ -134,8 +141,11 @@ class SourceIdentityTests {
         assertEquals("refs/heads/main",page.items().getFirst().ref());
         assertEquals(X,page.items().getFirst().commitSha());
         assertNull(page.nextCursor());
+        // 每次列表调用仅发一次批量 heads 请求（此前为逐分支串行）。
+        assertEquals(1,batchRefCalls);
         mainSha=Y;
         assertEquals(Y,service.refs(1,8,null,50).items().getFirst().commitSha());
+        assertEquals(2,batchRefCalls);
     }
 
     @Test void snapshotRejectsRefOutsidePolicyAndFormats() {
