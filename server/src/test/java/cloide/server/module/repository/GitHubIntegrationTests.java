@@ -47,7 +47,9 @@ class GitHubIntegrationTests {
         var db=new JdbcDataSource();
         db.setURL("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1");
         jdbc=new JdbcTemplate(db);
-        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V44__project_github_repositories.sql")).execute(db);
+        new ResourceDatabasePopulator(
+                new ClassPathResource("db/migration/V44__project_github_repositories.sql"),
+                new ClassPathResource("db/migration/V51__repository_source_identity.sql")).execute(db);
         var gen=KeyPairGenerator.getInstance("RSA");gen.initialize(2048);keys=gen.generateKeyPair();
         var pem=temp.resolve("app.pem");
         Files.writeString(pem,"-----BEGIN PRIVATE KEY-----\n"+Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded())+"\n-----END PRIVATE KEY-----");
