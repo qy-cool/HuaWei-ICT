@@ -69,6 +69,12 @@ class ProjectRunStore {
                 status, exitCode, output, jobId);
     }
 
+    void expireStale(LocalDateTime before) {
+        // 服务端超时兜底：宽限期后仍未收敛的活跃作业转 uncertain 终态，节点回归后仍可被真实回执覆盖核实。
+        jdbc.update("UPDATE project_runs SET status = 'uncertain' WHERE status IN ('dispatched','running','cancelling') AND created_at < ?",
+                before);
+    }
+
     public record LogLine(int seq, String text) { }
 
     List<LogLine> logs(String jobId, int after) {
