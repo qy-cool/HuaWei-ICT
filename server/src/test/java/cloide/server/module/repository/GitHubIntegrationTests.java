@@ -63,7 +63,9 @@ class GitHubIntegrationTests {
         when(coding.events(1,taskId,0)).thenReturn(List.of(new CodingService.Event(1,json.valueToTree(Map.of(
                 "type","change","path","hello.txt","beforeHash","missing","afterHash",GitHubApp.sha("done".getBytes()),"content","done")))));
         when(access.principal()).thenReturn(new AuthenticatedUser(5L,"operator","admin","approved",null,null));
-        service=new RepositoryService(jdbc,access,app,new TaskBranch(app,coding),coding,json);
+        service=new RepositoryService(jdbc,access,app,new TaskBranch(app,coding),coding,json,
+                new org.springframework.transaction.support.TransactionTemplate(
+                        new org.springframework.jdbc.datasource.DataSourceTransactionManager(db)));
     }
     @AfterEach void stop() {
         if(server!=null) server.stop(0);

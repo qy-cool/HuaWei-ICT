@@ -191,6 +191,14 @@ public class SourceIdentityService {
                 (Long)row[5],(Long)row[6],((java.sql.Timestamp)row[7]).toInstant().toString(),(Long)row[8],(Boolean)row[9]);
     }
 
+    private Policy policyAt(long remoteId,long version) {
+        var rows=jdbc.query(
+                "SELECT allowed_refs FROM repository_source_policies WHERE remote_id=? AND policy_version=?",
+                (rs,i)->decode(rs.getString("allowed_refs")),remoteId,version);
+        if (rows.isEmpty()) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        return new Policy(remoteId,version,rows.getFirst());
+    }
+
     /** 游标为本服务签发的不透明 base64url(offset)；非本服务格式一律按参数错误拒绝。 */
     private static int decodeCursor(String cursor) {
         try {
@@ -198,14 +206,6 @@ public class SourceIdentityService {
         } catch (IllegalArgumentException | ArithmeticException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
         }
-    }
-
-    private Policy policyAt(long remoteId,long version) {
-        var rows=jdbc.query(
-                "SELECT allowed_refs FROM repository_source_policies WHERE remote_id=? AND policy_version=?",
-                (rs,i)->decode(rs.getString("allowed_refs")),remoteId,version);
-        if (rows.isEmpty()) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        return new Policy(remoteId,version,rows.getFirst());
     }
 
     /** 幂等账本查询：同键同参返回原结果 ID；同键异参判定冲突。 */

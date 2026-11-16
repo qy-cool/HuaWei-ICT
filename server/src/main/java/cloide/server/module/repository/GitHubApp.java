@@ -105,12 +105,6 @@ public class GitHubApp {
         }
     }
 
-    /** GET 调用并在 404 时返回 Optional.empty()，其余非接受状态按错误语义上抛。 */
-    java.util.Optional<JsonNode> get(String path,String token) {
-        JsonNode result=call("GET",path,token,null,200,404);
-        return result.isNull()?java.util.Optional.empty():java.util.Optional.of(result);
-    }
-
     /**
      * 解析仓库分支 ref 到 40 位提交 SHA。404 映射 SOURCE_REF_NOT_FOUND（分支不存在），
      * 其余失败按既有语义上抛，供调用方区分“分支没了”与“暂时联系不上 GitHub”。

@@ -31,12 +31,12 @@ public class RepositoryService {
     private final TaskBranch branches;
     private final CodingService coding;
     private final ObjectMapper json;
+    private final org.springframework.transaction.support.TransactionTemplate tx;
 
     public List<Repository> list(long project) {
         access.requireRead(project);
         return jdbc.query("SELECT * FROM project_github_repositories WHERE project_id=? ORDER BY repo_name",REPO,project);
     }
-    @Transactional
     public Repository connect(long project,String name, UUID newRequest) {
         access.requireAdmin();
         access.requireRead(project);
@@ -59,26 +59,35 @@ public class RepositoryService {
         long id=info.get("id").asLong();
         String ownerName=info.get("owner").get("login").asText(), repoName=info.get("name").asText(),
                 defaultBranch=info.get("default_branch").asText();
-        var existing=jdbc.query("SELECT * FROM project_github_repositories WHERE remote_id=?",REPO,id);
-        if (existing.isEmpty()) {
-            // 首次绑定或解绑后重绑：V44 活动行 + 新的绑定代次（generation 单调递增）。
-            jdbc.update("""
-                    INSERT INTO project_github_repositories(project_id,remote_id,owner_name,repo_name,default_branch,installation_id,linked_by)
-                    VALUES (?,?,?,?,?,?,?)
-                    """,project,id,ownerName,repoName,defaultBranch,app.installation(),access.principal().id());
-            jdbc.update("""
-                    INSERT INTO project_repository_bindings(project_id,remote_id,owner_name,repo_name,default_branch,installation_id,generation,active,linked_by)
-                    SELECT ?,?,?,?,?,?,COALESCE(MAX(generation),0)+1,1,? FROM project_repository_bindings WHERE remote_id=?
-                    """,project,id,ownerName,repoName,defaultBranch,app.installation(),access.principal().id(),id);
-        } else {
-            Repository saved=existing.getFirst();
-            if (saved.projectId()!=project) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-            if (!saved.ownerName().equals(ownerName) || !saved.repoName().equals(repoName)) {
-                // 仓库改名：按稳定 remote_id 核对后同步活动行与当前代次的名称。
-                jdbc.update("UPDATE project_github_repositories SET owner_name=?,repo_name=? WHERE remote_id=?",ownerName,repoName,id);
-                jdbc.update("UPDATE project_repository_bindings SET owner_name=?,repo_name=? WHERE remote_id=? AND active=1",ownerName,repoName,id);
+        // GitHub HTTP 全部完成后才开短事务：远端等待期间不占用数据库连接（DataSourceTransactionManager 在事务开始即取连接）。
+        tx.executeWithoutResult(status->{
+            var existing=jdbc.query("SELECT * FROM project_github_repositories WHERE remote_id=? FOR UPDATE",REPO,id);
+            if (existing.isEmpty()) {
+                // 首次绑定或解绑后重绑：V44 活动行 + 新的绑定代次（generation 单调递增）。
+                jdbc.update("""
+                        INSERT INTO project_github_repositories(project_id,remote_id,owner_name,repo_name,default_branch,installation_id,linked_by)
+                        VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE remote_id=remote_id
+                        """,project,id,ownerName,repoName,defaultBranch,app.installation(),access.principal().id());
+                try {
+                    jdbc.update("""
+                            INSERT INTO project_repository_bindings(project_id,remote_id,owner_name,repo_name,default_branch,installation_id,generation,active,linked_by)
+                            SELECT ?,?,?,?,?,?,COALESCE(MAX(generation),0)+1,1,? FROM project_repository_bindings WHERE remote_id=?
+                            """,project,id,ownerName,repoName,defaultBranch,app.installation(),access.principal().id(),id);
+                } catch (org.springframework.dao.DuplicateKeyException e) {
+                    // 并发首绑：另一方已建立同代次活动绑定；归属一致按幂等成功收敛，否则拒绝。
+                    var winner=activeBinding(project,id);
+                    if (winner.projectId()!=project) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,e);
+                }
+            } else {
+                Repository saved=existing.getFirst();
+                if (saved.projectId()!=project) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                if (!saved.ownerName().equals(ownerName) || !saved.repoName().equals(repoName)) {
+                    // 仓库改名：按稳定 remote_id 核对后同步活动行与当前代次的名称。
+                    jdbc.update("UPDATE project_github_repositories SET owner_name=?,repo_name=? WHERE remote_id=?",ownerName,repoName,id);
+                    jdbc.update("UPDATE project_repository_bindings SET owner_name=?,repo_name=? WHERE remote_id=? AND active=1",ownerName,repoName,id);
+                }
             }
-        }
+        });
         return find(project,id,false);
     }
     @Transactional

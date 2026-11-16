@@ -57,8 +57,8 @@ class SourceIdentityTests {
         server.start();
         app=new GitHubApp(json,Clock.systemUTC(),URI.create("http://127.0.0.1:"+server.getAddress().getPort()),
                 "91",pem.toString(),17,"acme","acme/template","fixture-secret");
-        repositories=new RepositoryService(jdbc,access,app,null,null,json);
         var tx=new TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(db));
+        repositories=new RepositoryService(jdbc,access,app,null,null,json,tx);
         service=new SourceIdentityService(jdbc,access,app,repositories,json,tx);
         // 默认按平台管理员（id=5）+ 项目 1 成员放行；个别用例里改紧。
         when(access.principal()).thenReturn(new AuthenticatedUser(5L,"operator","admin","approved",null,null));
@@ -91,6 +91,10 @@ class SourceIdentityTests {
         try {
             String p=e.getRequestURI().getPath();
             if(p.equals("/app/installations/17/access_tokens")) { reply(e,201,Map.of("token","short-lived")); return; }
+            if(p.equals("/repos/acme/orders")) {
+                reply(e,200,Map.of("id",8,"name","orders","owner",Map.of("login","acme"),
+                        "private",true,"default_branch","main","description","")); return;
+            }
             if(p.equals("/repos/acme/orders/git/ref/heads/main")) {
                 reply(e,200,Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha))); return;
             }
@@ -217,5 +221,13 @@ class SourceIdentityTests {
                 .encodeToString("99999999999999999999".getBytes(StandardCharsets.UTF_8));
         var error2=assertThrows(BusinessException.class,()->service.refs(1,8,overflow,50));
         assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error2.getErrorCode());
+    }
+
+    @Test void connectOnExistingActiveBindingIsIdempotent() {
+        // 并发/重复导入同一仓库：V44 活动行已存在时不产生新代次，返回原绑定。
+        var linked=repositories.connect(1,"orders",null);
+        assertEquals(8,linked.remoteId());
+        assertEquals(1,(long)jdbc.queryForObject(
+                "SELECT COUNT(*) FROM project_repository_bindings WHERE remote_id=8 AND active=1",Long.class));
     }
 }
