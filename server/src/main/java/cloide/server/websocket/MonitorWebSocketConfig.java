@@ -18,13 +18,15 @@ public class MonitorWebSocketConfig implements WebSocketConfigurer {
     private final MonitorWebSocketHandler monitorWebSocketHandler;
     private final MonitorTicketService monitorTicketService;
     private final AppProperties appProperties;
+    private final LegacyMonitorAccess access;
 
     /** 注入浏览器监控 Handler、Ticket 服务和 CORS 配置。 */
     public MonitorWebSocketConfig(MonitorWebSocketHandler monitorWebSocketHandler,
-            MonitorTicketService monitorTicketService, AppProperties appProperties) {
+            MonitorTicketService monitorTicketService, AppProperties appProperties, LegacyMonitorAccess access) {
         this.monitorWebSocketHandler = monitorWebSocketHandler;
         this.monitorTicketService = monitorTicketService;
         this.appProperties = appProperties;
+        this.access = access;
     }
 
     /** 注册 /ws/monitor 地址，使用配置的 Origin 白名单替代通配符。 */
@@ -33,7 +35,7 @@ public class MonitorWebSocketConfig implements WebSocketConfigurer {
         String[] allowedOrigins = appProperties.getCors().getAllowedOrigins()
                 .toArray(String[]::new);
         registry.addHandler(monitorWebSocketHandler, "/ws/monitor")
-                .addInterceptors(new MonitorHandshakeInterceptor(monitorTicketService))
+                .addInterceptors(new MonitorHandshakeInterceptor(monitorTicketService, access))
                 .setAllowedOrigins(allowedOrigins);
     }
 }

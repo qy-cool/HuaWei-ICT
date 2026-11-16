@@ -54,6 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration"
 })
+@MockitoBean(types = org.springframework.jdbc.core.JdbcTemplate.class)
 class SystemControllerTests {
 
     @Autowired

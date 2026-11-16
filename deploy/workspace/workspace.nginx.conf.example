@@ -1,0 +1,54 @@
+# 放入 http 上下文。重复部署工作区时仅定义一次 map。
+map $http_upgrade $cloide_ide_connection {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name orders.ide.example.test;
+    ssl_certificate     /etc/nginx/tls/orders/fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/orders/key.pem;
+    if ($host != orders.ide.example.test) { return 404; }
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    location = /_cloide/session {
+        limit_except POST { deny all; }
+        client_max_body_size 1k;
+        if ($args != "") { return 400; }
+        proxy_pass http://127.0.0.1:18080/api/workspace-gateway/session;
+        proxy_pass_request_headers off;
+        proxy_set_header Host 127.0.0.1;
+        proxy_set_header Content-Type text/plain;
+        proxy_set_header X-Cloide-Workspace-Host $server_name;
+        proxy_set_header X-Cloide-Browser-Origin $http_origin;
+        include /etc/cloide/private/workspace-gateway-header.conf;
+    }
+    location = /_cloide/check {
+        internal;
+        proxy_pass http://127.0.0.1:18080/api/workspace-gateway/authorize;
+        proxy_method GET;
+        proxy_pass_request_headers off;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host 127.0.0.1;
+        proxy_set_header X-Cloide-Workspace-Host $server_name;
+        proxy_set_header Cookie $http_cookie;
+        include /etc/cloide/private/workspace-gateway-header.conf;
+    }
+    location ^~ /_cloide/ { return 404; }
+    location / {
+        auth_request /_cloide/check;
+        # 此端口只对应当前工作区的 session-guard。
+        proxy_pass http://127.0.0.1:16400;
+        proxy_http_version 1.1;
+        proxy_set_header Host $server_name;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $cloide_ide_connection;
+        proxy_set_header Authorization "";
+        proxy_set_header X-Cloide-Gateway-Key "";
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+}

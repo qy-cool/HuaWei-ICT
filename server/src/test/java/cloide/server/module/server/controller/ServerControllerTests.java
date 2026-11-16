@@ -81,6 +81,7 @@ import org.springframework.test.web.servlet.RequestBuilder;
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration"
 })
 @AutoConfigureMockMvc
+@MockitoBean(types = org.springframework.jdbc.core.JdbcTemplate.class)
 class ServerControllerTests {
 
     private static final String ADMIN_TOKEN = "admin-token";

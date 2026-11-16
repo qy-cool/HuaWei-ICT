@@ -13,7 +13,8 @@ RUN mvn -q -B package -DskipTests
 
 # 运行阶段
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S cloide && adduser -S -G cloide cloide
+RUN addgroup -S cloide && adduser -S -G cloide cloide \
+    && mkdir -p /var/lib/cloide/artifacts && chown -R cloide:cloide /var/lib/cloide
 WORKDIR /app
 # 通配符只匹配 fat jar（spring-boot 的 .jar.original 不满足 *.jar），解除 jar 名与版本的锁步。
 COPY --from=builder /build/target/*.jar app.jar

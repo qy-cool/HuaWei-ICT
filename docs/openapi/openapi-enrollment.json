@@ -1,0 +1,172 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "无 SSH 节点登记",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/admin/node-enrollments": {
+      "post": {
+        "operationId": "createNodeEnrollment",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功，令牌响应仅可用于本次登记",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "ticket"
+                      ],
+                      "properties": {
+                        "ticket": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{43}$"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "无效名称"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "限管理员"
+          }
+        }
+      }
+    },
+    "/api/node-enrollments/redeem": {
+      "post": {
+        "operationId": "redeemNodeEnrollment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ticket"
+                ],
+                "properties": {
+                  "ticket": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功，令牌响应仅可用于本次登记",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "server_id",
+                        "agent_token",
+                        "created_at"
+                      ],
+                      "properties": {
+                        "server_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "agent_token": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "令牌格式错误"
+          },
+          "401": {
+            "description": "令牌无效、已过期或已使用"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

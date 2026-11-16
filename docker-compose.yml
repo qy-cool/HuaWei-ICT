@@ -54,6 +54,8 @@ services:
 
   server:
     build: ./server
+    volumes:
+      - server-artifacts:/var/lib/cloide/artifacts
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
@@ -70,6 +72,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       AES_GCM_KEY: ${AES_GCM_KEY:?set AES_GCM_KEY in .env}
       AUTH_BOOTSTRAP_TOKEN: ${AUTH_BOOTSTRAP_TOKEN:-}
+      PROJECT_ISOLATION_ENABLED: ${PROJECT_ISOLATION_ENABLED:-false}
+      ENGINEERING_CLUSTER_CONNECTIONS: ${ENGINEERING_CLUSTER_CONNECTIONS:-false}
+      ENGINEERING_RECOVERY_MODE: ${ENGINEERING_RECOVERY_MODE:-false}
+      CLOIDE_ARTIFACTS_DIRECTORY: /var/lib/cloide/artifacts
+      WORKSPACE_DOMAIN: ${WORKSPACE_DOMAIN:-}
+      WORKSPACE_CONSOLE_ORIGIN: ${WORKSPACE_CONSOLE_ORIGIN:-}
+      WORKSPACE_GATEWAY_KEY: ${WORKSPACE_GATEWAY_KEY:-}
       APP_ENV: prod
       SPRING_PROFILES_ACTIVE: prod
       OUTBOX_ENABLED: ${OUTBOX_ENABLED:-true}
@@ -140,6 +149,7 @@ services:
       - server
 
 volumes:
+  server-artifacts:
   mysql-data:
   rabbitmq-data:
   redis-data:

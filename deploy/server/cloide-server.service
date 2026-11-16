@@ -8,6 +8,7 @@ Type=simple
 User=cloide
 Group=cloide
 WorkingDirectory=/opt/cloide/server
+Environment=CLOIDE_ARTIFACTS_DIRECTORY=/var/lib/cloide/artifacts
 EnvironmentFile=/etc/cloide/server.env
 Environment="JAVA_TOOL_OPTIONS=-Xms256m -Xmx768m -Dfile.encoding=UTF-8"
 ExecStart=/usr/bin/java -jar /opt/cloide/server/cloide-server.jar

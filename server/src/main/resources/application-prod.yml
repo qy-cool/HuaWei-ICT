@@ -33,6 +33,8 @@ springdoc:
     enabled: false
 
 cloide:
+  artifacts:
+    directory: ${CLOIDE_ARTIFACTS_DIRECTORY:/var/lib/cloide/artifacts}
   agent:
     # 生产反代仅信任本机 Nginx，实际值必须在 root-only 环境文件中明确配置。
     trusted-proxy-cidrs: ${AGENT_TRUSTED_PROXY_CIDRS:127.0.0.1/32,::1/128}

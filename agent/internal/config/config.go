@@ -14,6 +14,9 @@ import (
 
 // Config 是 Agent 的运行时配置。
 type Config struct {
+	// JobManifest points to the local repository-test policy on a development node.
+	// An empty path keeps the runner disabled.
+	JobManifest string
 	// BackendURL 是后端 WebSocket 地址，如 ws://localhost:18080。
 	BackendURL string
 	// ServerID 是 admin 预建的服务器 ID。
@@ -99,6 +102,7 @@ type Config struct {
 //   - CLOIDE_LOG_LEVEL
 func Load() (*Config, error) {
 	cfg := &Config{
+		JobManifest:       os.Getenv("CLOIDE_JOB_MANIFEST"),
 		BackendURL:        os.Getenv("CLOIDE_BACKEND_URL"),
 		AgentToken:        os.Getenv("CLOIDE_AGENT_TOKEN"),
 		MetricsBufferPath: getenvDefault("CLOIDE_METRICS_BUFFER_PATH", "/var/lib/cloide/metrics-buffer.json"),

@@ -32,7 +32,7 @@ public class ServerVo {
     @Schema(description = "SSH 登录用户名")
     private String sshUser;
     @JsonProperty("ssh_auth_type")
-    @Schema(description = "SSH 认证方式", allowableValues = {"password", "private_key"})
+    @Schema(description = "SSH 认证方式；仅 Agent 节点返回 none", allowableValues = {"password", "private_key", "none"})
     private String sshAuthType;
     @JsonProperty("agent_id")
     @Schema(description = "Agent ID（未注册 Agent 为 null）")

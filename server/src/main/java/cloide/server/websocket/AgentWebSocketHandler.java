@@ -9,6 +9,7 @@ import cloide.server.module.metrics.dto.MetricsReportPayload;
 import cloide.server.module.metrics.service.MetricsRejectedException;
 import cloide.server.module.metrics.service.MetricsService;
 import cloide.server.module.command.CommandResultHandler;
+import cloide.server.module.job.AgentJobChannel;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
@@ -50,6 +51,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final TerminalAgentRelayService terminalRelayService;
     private final TerminalRelayLifecycleService terminalRelayLifecycleService;
     private final CommandResultHandler commandResultHandler;
+    private AgentJobChannel jobChannel;
     private final Map<String, AgentWebSocketSession> pendingSessions = new ConcurrentHashMap<>();
 
     /** 注入生产运行所需 JSON、鉴权、心跳、连接和资源限制依赖。 */
@@ -65,10 +67,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             AgentMessageRateLimiter messageRateLimiter,
             TaskScheduler taskScheduler, TerminalAgentRelayService terminalRelayService,
             TerminalRelayLifecycleService terminalRelayLifecycleService,
-            org.springframework.beans.factory.ObjectProvider<CommandResultHandler> commandResultHandler) {
+            org.springframework.beans.factory.ObjectProvider<CommandResultHandler> commandResultHandler,
+            AgentJobChannel jobChannel) {
         this(objectMapper, authenticationService, heartbeatService, connectionRegistry, metricsService, clock,
                 connectionLimiter, messageRateLimiter, taskScheduler, terminalRelayService,
                 terminalRelayLifecycleService, commandResultHandler.getIfAvailable());
+        this.jobChannel = jobChannel;
     }
 
     /** 生产构造器：命令域结果处理器为可缺省依赖（命令开关关闭时不装配）。 */
@@ -142,6 +146,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         try {
+            if (session.authenticated() && connectionRegistry.clustered() && !connectionRegistry.owns(session)) {
+                close(socketSession, CloseStatus.POLICY_VIOLATION);
+                return;
+            }
             AgentMessage agentMessage = objectMapper.readValue(message.getPayload(), AgentMessage.class);
             if (AgentMessageType.AGENT_AUTHENTICATE.value().equals(agentMessage.type())) {
                 authenticate(session, agentMessage.payload());
@@ -154,7 +162,14 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 // 心跳可携带投递遥测统计；老版本 Agent 载荷为空对象，字段全部为 null。
                 AgentHeartbeatPayload deliveryStats = objectMapper.treeToValue(
                         agentMessage.payload(), AgentHeartbeatPayload.class);
-                heartbeatService.heartbeat(session, deliveryStats);
+                if (connectionRegistry.clustered()) {
+                    if (!connectionRegistry.withOwnership(session, () -> heartbeatService.heartbeat(session, deliveryStats))) {
+                        close(socketSession, CloseStatus.POLICY_VIOLATION);
+                        return;
+                    }
+                } else {
+                    heartbeatService.heartbeat(session, deliveryStats);
+                }
                 // 冻结 heartbeat.ack payload，返回确认的心跳时间，供 Agent 校验心跳周期。
                 var ackPayload = objectMapper.createObjectNode()
                         .put("server_id", session.serverId())
@@ -196,6 +211,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 }
                 terminalRelayService.relay(session, objectMapper.treeToValue(
                         objectMapper.valueToTree(agentMessage), TerminalMessage.class));
+            } else if (session.authenticated() && agentMessage.type() != null && agentMessage.type().startsWith("job.")
+                    && jobChannel != null) {
+                jobChannel.handle(session, agentMessage);
             } else if ("command.result".equals(agentMessage.type()) && session.authenticated()) {
                 // 命令结果回填：归属校验后交给命令域状态机（execution_id 幂等）。
                 if (commandResultHandler == null) {
@@ -245,7 +263,11 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             // Agent 断开(关机/进程退出)时立即标记服务器离线;
             // 乐观锁防止误覆盖已重连新连接(markAgentOffline 要求 last_heartbeat_at 匹配)。
             if (heartbeatService != null) {
-                heartbeatService.markOfflineOnDisconnect(session);
+                if (connectionRegistry.clustered()) {
+                    connectionRegistry.withOwnership(session, () -> heartbeatService.markOfflineOnDisconnect(session));
+                } else {
+                    heartbeatService.markOfflineOnDisconnect(session);
+                }
             }
             connectionRegistry.remove(session);
         }
@@ -272,16 +294,31 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (connectionLimiter != null) {
             connectionLimiter.authenticate(session.sessionId());
         }
-        heartbeatService.heartbeat(session);
+        if (connectionRegistry.clustered()) {
+            connectionRegistry.claim(session, () -> authenticationService.authenticate(serverId,payload.get("token").textValue()));
+            if (!connectionRegistry.withOwnership(session, () -> {
+                heartbeatService.heartbeat(session);
+                if (session.socketSession().isOpen()) registerLocal(session);
+            })) {
+                close(session.socketSession(), CloseStatus.POLICY_VIOLATION);
+                return;
+            }
+        } else {
+            heartbeatService.heartbeat(session);
+        }
         // 注册前校验连接仍在，避免把已关闭会话注册进 registry。
         if (session.socketSession().isOpen()) {
-            connectionRegistry.replace(session).ifPresent(old -> close(old.socketSession(), CloseStatus.NORMAL));
+            if (!connectionRegistry.clustered()) registerLocal(session);
             // 冻结 agent.authenticated payload，返回 server_id 和认证时间，供 Agent 校验绑定。
             var authPayload = objectMapper.createObjectNode()
                     .put("server_id", server.getId())
                     .put("authenticated_at", OffsetDateTime.now(clock).toString());
             send(session.socketSession(), AgentMessageType.AGENT_AUTHENTICATED, null, authPayload);
         }
+    }
+
+    private void registerLocal(AgentWebSocketSession session) {
+        connectionRegistry.replace(session).ifPresent(old -> close(old.socketSession(), CloseStatus.NORMAL));
     }
 
     /** 清理十秒内未发送认证首帧的连接，跳过认证中状态避免误杀慢 DB 认证。 */
@@ -306,7 +343,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                     .put("message_id", messageId)
                     .put("timestamp", OffsetDateTime.now(clock).toString())
                     .set("payload", payload).toString();
-            session.sendMessage(new TextMessage(body));
+            AgentWebSocketSession registered = pendingSessions.get(session.getId());
+            if (registered != null) {
+                registered.send(new TextMessage(body));
+            } else {
+                session.sendMessage(new TextMessage(body));
+            }
         }
     }
 

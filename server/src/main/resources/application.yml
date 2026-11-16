@@ -63,6 +63,18 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 cloide:
+  oidc:
+    enabled: ${OIDC_ENABLED:false}
+    issuer: ${OIDC_ISSUER:}
+    authorization-endpoint: ${OIDC_AUTHORIZATION_ENDPOINT:}
+    token-endpoint: ${OIDC_TOKEN_ENDPOINT:}
+    jwks-uri: ${OIDC_JWKS_URI:}
+    client-id: ${OIDC_CLIENT_ID:}
+    client-secret: ${OIDC_CLIENT_SECRET:}
+    redirect-uri: ${OIDC_REDIRECT_URI:}
+  engineering:
+    recovery: ${ENGINEERING_RECOVERY_MODE:false}
+    cluster-connections: ${ENGINEERING_CLUSTER_CONNECTIONS:false}
   jwt:
     secret: ${JWT_SECRET:}
     expire-hours: ${JWT_EXPIRE_HOURS:72}
@@ -186,6 +198,7 @@ cloide:
     cleanup-max-batches-per-run: ${SSH_TEST_HISTORY_CLEANUP_MAX_BATCHES_PER_RUN:100}
   security:
     aes-gcm-key: ${AES_GCM_KEY:}
+    project-isolation: ${PROJECT_ISOLATION_ENABLED:false}
     # JWT 黑名单故障语义（2026-09-14 安全评审决策一）：fail_closed（默认）在 Redis 故障时
     # 拒绝带 Token 的请求并返回 503/50302；fail_open 按可用性优先放行（已登出 Token 在故障
     # 窗口内可能复活至自然过期）。

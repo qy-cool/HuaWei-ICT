@@ -11,6 +11,9 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 .tanstack/
+__pycache__/
+*.pyc
+server/data/artifacts/
 *.class
 hs_err_pid*
 

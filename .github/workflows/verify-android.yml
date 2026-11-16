@@ -41,9 +41,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # v3 默认安装已下架的 SDK tools 包，sdkmanager 会以 exit 1 失败；
+      # v4 默认只装 platform-tools，并运行在 Node 24。
       - name: Set up Android SDK
         if: steps.detect.outputs.exists == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Gradle
         if: steps.detect.outputs.exists == 'true'

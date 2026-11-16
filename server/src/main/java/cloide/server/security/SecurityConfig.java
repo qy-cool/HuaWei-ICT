@@ -2,6 +2,7 @@ package cloide.server.security;
 
 import cloide.server.module.auth.mapper.UserMapper;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -75,7 +76,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity httpSecurity,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            SecurityErrorHandler securityErrorHandler) throws Exception {
+            SecurityErrorHandler securityErrorHandler,
+            @Value("${cloide.security.project-isolation:false}") boolean projectIsolation) throws Exception {
         return httpSecurity
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -87,9 +89,29 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(securityErrorHandler)
                         .accessDeniedHandler(securityErrorHandler))
+                .authorizeHttpRequests(registry -> {
+                    if (projectIsolation) {
+                        // 旧客户端读取的是全实例数据。普通成员使用带项目 ID 的受权入口。
+                        registry.requestMatchers("/api/servers", "/api/servers/**", "/api/alerts/**",
+                                "/api/ai/**", "/api/system/**", "/api/ws/monitor-ticket").hasRole("ADMIN");
+                    }
+                })
                 .authorizeHttpRequests(registry -> registry
                         .requestMatchers(HttpMethod.GET, "/api/health", "/api/ready").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/oidc/status").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/oidc/start", "/api/auth/oidc/complete").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/node-enrollments/redeem", "/api/build-agent/*/artifact").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/workspace-agent/*/runtime").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/workspace-agent/*/observations").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/integrations/github/webhook").permitAll()
+                        // 控制器对每次拉取、下载、回执独立校验节点 Token 和项目分配。
+                        .requestMatchers(HttpMethod.GET, "/api/release-agent/next", "/api/release-agent/*/content").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/release-agent/*/receipt").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/coding-agent/poll", "/api/coding-agent/events").permitAll()
+                        // 两个内网网关接口独立校验部署密钥及目标工作区；浏览器 JWT 仅在管理台使用。
+                        .requestMatchers(HttpMethod.POST, "/api/workspace-gateway/session").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/workspace-gateway/authorize").permitAll()
                         // 首管理员初始化状态查询（批次 8）：公开只读，仅返回一个布尔值，
                         // 供注册页决定是否展示一次性初始化令牌输入框。
                         .requestMatchers(HttpMethod.GET, "/api/auth/bootstrap-status").permitAll()

@@ -1,0 +1,29 @@
+apiVersion: cloide.dev/v1alpha1
+project: orders
+services:
+  orders-api:
+    kind: java-jar
+    source: api
+    build: [mvn, -B, package]
+    test: [mvn, -B, test]
+    artifact: target/orders-0.1.0.jar
+    port: 8080
+    health: /actuator/health/readiness
+    dependencies: [orders-db, orders-cache, orders-events]
+    secretRefs: [ORDERS_DB_PASSWORD, ORDERS_MQ_PASSWORD, ORDERS_REDIS_PASSWORD]
+  orders-db:
+    kind: postgresql
+    storage: orders-data
+    recoveryCheck: order-count-and-status
+  orders-cache:
+    kind: redis
+    storage: cache
+    recoveryCheck: rebuild-from-orders
+  orders-events:
+    kind: rabbitmq
+    storage: orders-events
+    recoveryCheck: order-event-id-deduplication
+release:
+  order: [orders-db, orders-cache, orders-events, orders-api]
+  migration: expand-contract
+  retainVersions: 3

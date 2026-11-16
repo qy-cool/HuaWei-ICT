@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "cloide-shell Alert API",
-    "description": "Authoritative cloide-shell alert API contract covering alert rule CRUD, alert record queries, mark-as-read, notification history, and the AI alert explanation review endpoint. Rule creation, update, and deletion require ROLE_ADMIN. Rule listing, record queries, mark-as-read, and notification history require authenticated users. The AI explanation endpoint requires ROLE_ADMIN and is only mounted when cloide.ai.explanation.enabled=true (404 otherwise). Alert evaluation is event-driven via MetricsReportedEvent AFTER_COMMIT, not exposed as REST endpoints.",
+    "description": "Authoritative cloide-shell alert API contract covering alert rule CRUD, alert record queries, mark-as-read, notification history, and the AI alert explanation review endpoint. Rule creation, update, and deletion require ROLE_ADMIN. Rule listing, record queries, mark-as-read, and notification history require authenticated users. The AI explanation endpoint requires ROLE_ADMIN and is only mounted when cloide.ai.explanation.enabled=true (404 otherwise). Alert evaluation is event-driven via MetricsReportedEvent AFTER_COMMIT, not exposed as REST endpoints. 项目隔离模式（PROJECT_ISOLATION_ENABLED=true）将本契约中的全局接口限制为平台管理员。",
     "version": "0.2.0"
   },
   "servers": [
@@ -126,6 +126,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Rule list",
             "headers": {
@@ -356,6 +359,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Paginated alert records",
             "headers": {
@@ -431,6 +437,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Record marked as read",
             "headers": {
@@ -488,6 +497,9 @@
           }
         ],
         "responses": {
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "200": {
             "description": "Notification history returned",
             "headers": {
