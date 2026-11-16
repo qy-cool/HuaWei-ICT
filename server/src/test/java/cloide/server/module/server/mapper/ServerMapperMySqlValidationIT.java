@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 
@@ -24,6 +25,7 @@ import org.springframework.test.context.ContextConfiguration;
 @ActiveProfiles("metrics-validation")
 @SpringBootTest
 @ContextConfiguration(initializers = ServerMapperMySqlValidationIT.TargetDatabaseGuard.class)
+@EnabledIfEnvironmentVariable(named = "RUN_MYSQL_VALIDATION_TESTS", matches = "true")
 class ServerMapperMySqlValidationIT {
 
     private static final String TEST_PREFIX = "j2-sort-validation";
