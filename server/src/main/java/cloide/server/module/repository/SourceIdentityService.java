@@ -254,8 +254,11 @@ public class SourceIdentityService {
 
     private List<String> decode(String encoded) {
         try {
+            JsonNode tree=json.readTree(encoded);
+            // H2 的 JSON 列 getString 返回再包一层引号的 JSON 字符串标量（MySQL 返回裸数组文本），拆包一次兼容两端。
+            if (tree!=null && tree.isTextual()) tree=json.readTree(tree.asText());
             List<String> refs=new ArrayList<>();
-            for (JsonNode ref:json.readTree(encoded)) refs.add(ref.asText());
+            if (tree!=null) for (JsonNode ref:tree) refs.add(ref.asText());
             return List.copyOf(refs);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR,e);
