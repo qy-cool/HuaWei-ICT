@@ -62,6 +62,70 @@ func TestMixedLedgerCorruptionDegradesWithoutPartialReplay(t *testing.T) {
 		t.Fatalf("expected degraded open (nil manager, ErrLedgerCorrupt), got manager=%v err=%v", m, err)
 	}
 }
+func TestUnsavedResultBlocksNewJobsAndRecovers(t *testing.T) {
+	// 结果写盘失败（同名目录阻塞 rename，双平台确定性注入）：unsaved 期间拒绝新作业、
+	// 不发 job.ready；故障消除后 poll 把终态转正并回放结果。
+	dir := t.TempDir()
+	results := make(chan Result, 10)
+	ready := make(chan string, 10)
+	var m *Manager
+	run := func(ctx context.Context, r Request, log func(string)) Result {
+		// 预约记录已由 Accept 落盘；执行期间把 <id>.json 换成同名目录，使结果 saveRecord 的 rename 失败。
+		os.Remove(filepath.Join(m.dir, r.ID+".json"))
+		if err := os.Mkdir(filepath.Join(m.dir, r.ID+".json"), 0700); err != nil {
+			t.Error(err)
+		}
+		return Result{r.ID, "succeeded", 0, "ok"}
+	}
+	m = openTest(t, dir, run, func(ctx context.Context, kind string, body any) error {
+		if kind == "job.ready" {
+			ready <- kind
+		}
+		if kind == "job.result" {
+			results <- body.(Result)
+		}
+		return nil
+	})
+	defer m.Close()
+	req := request()
+	if err := m.Accept(req); err != nil {
+		t.Fatal(err)
+	}
+	// 有界等待执行 goroutine 把 unsaved 置位。
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		m.mu.Lock()
+		unsaved := m.unsaved != nil
+		m.mu.Unlock()
+		if unsaved {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for unsaved result")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// unsaved 期间：另一作业被拒；poll 因写盘失败早退，不发送 ready。
+	second := Request{"0bb1b0d4-0b11-4d11-9c11-1d11e11f11aa", 1, "orders", strings.Repeat("b", 40),
+		time.Now().UTC().Add(time.Hour).Format(time.RFC3339)}
+	if err := m.Accept(second); err == nil || !strings.Contains(err.Error(), "awaiting durable result") {
+		t.Fatalf("expected new job rejection while unsaved, got %v", err)
+	}
+	m.poll()
+	select {
+	case <-ready:
+		t.Fatal("job.ready must not be emitted while the result awaits disk retry")
+	default:
+	}
+	// 故障消除后转正：ready 恢复协商，结果回放。
+	if err := os.RemoveAll(filepath.Join(m.dir, req.ID+".json")); err != nil {
+		t.Fatal(err)
+	}
+	m.poll()
+	receive(t, ready)
+	if got := receive(t, results); got.ID != req.ID || got.Status != "succeeded" || got.Output != "ok" {
+		t.Fatalf("replayed result: %+v", got)
+	}
+}
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {

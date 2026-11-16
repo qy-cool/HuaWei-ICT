@@ -204,15 +204,7 @@ func runSandbox(ctx context.Context, req Request, cfg manifest, repo repository,
 			result.Output = "sandbox/test process could not complete"
 		}
 	}
-	if ctx.Err() != nil {
-		result.ExitCode = -1
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			result.Status = "failed"
-			result.Output = "test deadline exceeded\n" + result.Output
-		} else {
-			result.Status = "cancelled"
-		}
-	}
+	result = classifyCancellation(ctx.Err(), result)
 	if captured != "" {
 		if result.Status == "succeeded" {
 			if err := completeCapture(captured, req, repo.ArtifactKind); err != nil {
@@ -225,6 +217,23 @@ func runSandbox(ctx context.Context, req Request, cfg manifest, repo repository,
 		}
 	}
 	result.Output = limitString(result.Output, 8192)
+	return result
+}
+
+// classifyCancellation 把执行结束后的上下文取消原因归入终态：deadline 到期为
+// failed（输出前缀标注，与 cancelled 区分），其余取消（含主动 cancel）为
+// cancelled。抽为纯函数以便跨平台直测，沙箱不可用的环境也能覆盖该分类。
+func classifyCancellation(ctxErr error, result Result) Result {
+	if ctxErr == nil {
+		return result
+	}
+	result.ExitCode = -1
+	if errors.Is(ctxErr, context.DeadlineExceeded) {
+		result.Status = "failed"
+		result.Output = "test deadline exceeded\n" + result.Output
+	} else {
+		result.Status = "cancelled"
+	}
 	return result
 }
 
