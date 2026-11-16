@@ -137,7 +137,7 @@ class RepositorySourceIdentityMySqlValidationIT {
                 INSERT INTO project_repository_bindings
                     (project_id, remote_id, owner_name, repo_name, default_branch,
                      installation_id, generation, active, linked_by, linked_at)
-                VALUES (?,?,?,?,?,?,?,?,1,?)
+                VALUES (?,?,?,?,?,?,?,1,?,?)
                 """, REMOTE_ID, REMOTE_ID, "acme", "validation-a1", "main", 17L, generation, 51L, linkedAt);
     }
 

@@ -40,4 +40,4 @@ V44 的 `project_github_repositories` 只有活动行，解绑直接删行：没
 
 `SourceIdentityTests`（回环 GitHub HTTP 夹具 + H2，V44+V51）：A1-01 分支前移冲突且 data 携带实际 SHA、原样重放返回原快照、同键异参冲突；A1-02 跨项目 404 不泄露、解绑后旧快照 bindingActive=false 且禁止新建、重绑产生第 2 代次且历史不串联；策略乐观版本与幂等重放不产生新版本行；refs 读时观察与单次批量解析。既有 `GitHubIntegrationTests` 补加载 V51 后全绿。
 
-真实 MySQL 方言验证：`RepositorySourceIdentityMySqlValidationIT` 覆盖 V51 四表建表、可空 active 唯一键（多撤销代次共存且至多一行活动）、(remote_id, generation) 与幂等键唯一性、策略版本复合主键。该 IT 需 `RUN_MYSQL_VALIDATION_TESTS=true`、`DB_HOST=127.0.0.1` 与含 "validation" 的隔离库名，经 `./mvnw -Pmysql-validation verify` 执行。**截至本笔记更新尚未在真实 MySQL 上运行**（本机 MySQL 8.4 已启动但无可用凭据建库）；结果以联调环境首次实际运行为准。
+真实 MySQL 方言验证：`RepositorySourceIdentityMySqlValidationIT` 覆盖 V51 四表建表、可空 active 唯一键（多撤销代次共存且至多一行活动）、(remote_id, generation) 与幂等键唯一性、策略版本复合主键。该 IT 需 `RUN_MYSQL_VALIDATION_TESTS=true`、`DB_HOST=127.0.0.1` 与含 "validation" 的隔离库名，经 `./mvnw -Pmysql-validation verify` 执行。**2026-11-16 已在真实 MySQL 8.4.13 上运行通过（5/5）**：联调机一次性容器承载隔离库 `cloide_validation_a1`，SSH 隧道回本机执行，空库经 Flyway 全量迁移 V1–V51；结束后容器、镜像、隧道与临时口令均已清理。首跑暴露并修正了 IT 夹具的 INSERT 参数错位（active 占位符错吃 linked_by 值，H2 单测不经过该路径故未拦截），生产代码无此问题。
