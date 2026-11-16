@@ -105,6 +105,46 @@ public class GitHubApp {
         }
     }
 
+    /** GET 调用并在 404 时返回 Optional.empty()，其余非接受状态按错误语义上抛。 */
+    java.util.Optional<JsonNode> get(String path,String token) {
+        JsonNode result=call("GET",path,token,null,200,404);
+        return result.isNull()?java.util.Optional.empty():java.util.Optional.of(result);
+    }
+
+    /**
+     * 解析仓库分支 ref 到 40 位提交 SHA。404 映射 SOURCE_REF_NOT_FOUND（分支不存在），
+     * 其余失败按既有语义上抛，供调用方区分“分支没了”与“暂时联系不上 GitHub”。
+     * ref 必须是 refs/heads/&lt;分支&gt;；含斜杠分支（如 release/1.2）走 matching-refs
+     * 集合端点并按完整 ref 精确匹配，因为该端点按前缀返回多条。
+     */
+    String resolveRef(String owner,String repo,String ref,String token) {
+        String branch=ref.substring("refs/heads/".length());
+        JsonNode object;
+        if (branch.indexOf('/')<0) {
+            object=call("GET","/repos/"+owner+"/"+repo+"/git/ref/heads/"+branch,token,null,200,404)
+                    .path("object");
+        } else {
+            JsonNode list=call("GET","/repos/"+owner+"/"+repo+"/git/matching-refs/heads/"+branch,token,null,200,404);
+            object=null;
+            for (JsonNode item:list) {
+                if (ref.equals(item.path("ref").asText())) { object=item.path("object"); break; }
+            }
+            if (object==null) throw new BusinessException(ErrorCode.SOURCE_REF_NOT_FOUND);
+        }
+        String sha=object.path("sha").asText("");
+        if (!sha.matches("[0-9a-f]{40}")) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
+        return sha;
+    }
+
+    /** 读取提交的树 SHA；提交对象缺失视为上游数据异常（RESOURCE_CONFLICT），不与分支缺失混淆。 */
+    String treeOf(String owner,String repo,String commitSha,String token) {
+        JsonNode commit=call("GET","/repos/"+owner+"/"+repo+"/git/commits/"+commitSha,token,null,200,404);
+        if (commit.isNull()) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
+        String tree=commit.path("tree").path("sha").asText("");
+        if (!tree.matches("[0-9a-f]{40}")) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
+        return tree;
+    }
+
     void verify(byte[] bytes,String signature) {
         if (webhookSecret.isBlank() || signature==null || !signature.matches("sha256=[a-f0-9]{64}")) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
