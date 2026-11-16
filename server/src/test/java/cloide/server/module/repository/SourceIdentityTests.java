@@ -190,4 +190,13 @@ class SourceIdentityTests {
         assertThrows(BusinessException.class,()->repositories.activeBinding(2,8));
         assertEquals(1,(long)jdbc.queryForObject("SELECT COUNT(*) FROM project_repository_bindings WHERE remote_id=8",Long.class));
     }
+
+    @Test void snapshotReadRequiresProjectReadPermission() {
+        var snapshot=service.snapshot(1,8,UUID.randomUUID(),"refs/heads/main",null);
+        // snapshot() 创建路径与显式读取都经过 requireRead；非成员在该步即被拒。
+        verify(access,atLeastOnce()).requireRead(1);
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(access).requireRead(1);
+        var error=assertThrows(BusinessException.class,()->service.snapshotRow(1,snapshot.snapshotId()));
+        assertEquals(ErrorCode.FORBIDDEN,error.getErrorCode());
+    }
 }

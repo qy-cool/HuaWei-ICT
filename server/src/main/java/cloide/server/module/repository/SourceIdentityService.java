@@ -162,8 +162,9 @@ public class SourceIdentityService {
         });
     }
 
-    /** 读取快照；跨项目请求按 404 处理，不暴露其他项目的仓库与 ref 信息。 */
+    /** 读取快照；先校验项目读权限，跨项目请求按 404 处理，不暴露其他项目的仓库与 ref 信息。 */
     public Snapshot snapshotRow(long project,String snapshotId) {
+        access.requireRead(project);
         if (snapshotId==null || !snapshotId.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
         }
