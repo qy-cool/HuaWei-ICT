@@ -85,7 +85,9 @@ public class SourceIdentityService {
             jdbc.update("INSERT INTO repository_source_policies(remote_id,policy_version,allowed_refs,updated_by) VALUES (?,?,?,?)",
                     remoteId,next,encode(normalized),access.principal().id());
         } catch (DuplicateKeyException e) {
-            // 并发竞争：另一请求已抢先写入同版本，按幂等键冲突反馈而非内部错误。
+            // 并发同键先按锁定读收敛（同参重放返回原版本）；赢家是其他 requestId 的版本竞争才按 40908 反馈。
+            String winner=idempotentResultForUpdate(project,operation,requestId,digest);
+            if (winner!=null) return policyAt(remoteId,Long.parseLong(winner));
             throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT,e);
         }
         recordIdempotent(project,operation,requestId,digest,String.valueOf(next));
@@ -158,7 +160,9 @@ public class SourceIdentityService {
             } catch (DuplicateKeyException e) {
                 // 并发同键：另一方已持久化唯一结果，本方丢弃刚插入的快照行改用既有结果。
                 jdbc.update("DELETE FROM source_snapshots WHERE snapshot_id=?",snapshotId);
-                String existing=idempotentResult(project,operation,requestId,digest);
+                // 复核必须用锁定读：普通 SELECT 沿用本事务开头 activeBinding 固定的
+                // REPEATABLE READ 读视图，看不到赢家刚提交的账本行，同参重放会被误判为 40908。
+                String existing=idempotentResultForUpdate(project,operation,requestId,digest);
                 if (existing!=null) return existing;
                 throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT,e);
             }
@@ -214,10 +218,24 @@ public class SourceIdentityService {
 
     /** 幂等账本查询：同键同参返回原结果 ID；同键异参判定冲突。 */
     private String idempotentResult(long project,String operation,UUID requestId,String digest) {
-        var rows=jdbc.queryForList("""
+        return resolve(jdbc.queryForList("""
                 SELECT param_digest,result_id FROM repository_idempotent_requests
                 WHERE project_id=? AND requester_id=? AND operation=? AND request_id=?
-                """,project,access.principal().id(),operation,requestId.toString());
+                """,project,access.principal().id(),operation,requestId.toString()),digest);
+    }
+
+    /**
+     * 幂等账本的当前读复核：FOR UPDATE 锁定读不沿用本事务的 REPEATABLE READ 一致性读视图，
+     * 能看到并发赢家在唯一键冲突解除前刚提交的账本行，供 DuplicateKeyException 后收敛。
+     */
+    String idempotentResultForUpdate(long project,String operation,UUID requestId,String digest) {
+        return resolve(jdbc.queryForList("""
+                SELECT param_digest,result_id FROM repository_idempotent_requests
+                WHERE project_id=? AND requester_id=? AND operation=? AND request_id=? FOR UPDATE
+                """,project,access.principal().id(),operation,requestId.toString()),digest);
+    }
+
+    private static String resolve(List<Map<String,Object>> rows,String digest) {
         if (rows.isEmpty()) return null;
         if (!digest.equals(rows.getFirst().get("param_digest"))) throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT);
         return String.valueOf(rows.getFirst().get("result_id"));

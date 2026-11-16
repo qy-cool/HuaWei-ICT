@@ -223,6 +223,23 @@ class SourceIdentityTests {
         assertEquals(ErrorCode.SOURCE_REQUEST_CONFLICT,error.getErrorCode());
     }
 
+    @Test void idempotentForUpdateResolvesCommittedLedgerRow() {
+        // DuplicateKeyException 收敛路径的锁定读（FOR UPDATE 当前读）：直测命中、异参与缺失三种形态；
+        // REPEATABLE READ 读视图导致的陈旧读仅真实 MySQL 可复现，H2 下验证 SQL 形态与 digest 语义。
+        String digestA="a".repeat(64), digestB="b".repeat(64);
+        UUID requestId=UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO repository_idempotent_requests(project_id,requester_id,operation,request_id,param_digest,result_id)
+                VALUES (1,5,'snapshot',?,?,'11111111-1111-1111-1111-111111111111')
+                """,requestId.toString(),digestA);
+        assertEquals("11111111-1111-1111-1111-111111111111",
+                service.idempotentResultForUpdate(1,"snapshot",requestId,digestA));
+        var conflict=assertThrows(BusinessException.class,
+                ()->service.idempotentResultForUpdate(1,"snapshot",requestId,digestB));
+        assertEquals(ErrorCode.SOURCE_REQUEST_CONFLICT,conflict.getErrorCode());
+        assertNull(service.idempotentResultForUpdate(1,"snapshot",UUID.randomUUID(),digestA));
+    }
+
     @Test void refsRejectsMalformedCursor() {
         var error=assertThrows(BusinessException.class,()->service.refs(1,8,"!!!",50));
         assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error.getErrorCode());
