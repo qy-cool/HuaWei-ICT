@@ -41,6 +41,8 @@ class SourceIdentityTests {
     private volatile String mainSha=X;
     /** 夹具控制的树 SHA：与 mainSha 联动。 */
     private volatile String mainTree=TREE_X;
+    /** 夹具开关：置 true 后单 ref 端点对 main 返回 404，模拟远端分支已删除。 */
+    private volatile boolean mainMissing;
     /** 批量 heads 端点命中计数：断言 refs 列表单次调用只发一次请求。 */
     private int batchRefCalls;
 
@@ -103,6 +105,7 @@ class SourceIdentityTests {
                 reply(e,200,List.of(Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha)))); return;
             }
             if(p.equals("/repos/acme/orders/git/ref/heads/main")) {
+                if (mainMissing) { reply(e,404,Map.of("message","Not Found")); return; }
                 reply(e,200,Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha))); return;
             }
             if(p.equals("/repos/acme/orders/git/commits/"+X)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_X))); return; }
@@ -152,6 +155,15 @@ class SourceIdentityTests {
         assertThrows(BusinessException.class,()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/develop",null));
         assertThrows(BusinessException.class,()->service.snapshot(1,8,UUID.randomUUID(),"main",null));
         assertThrows(BusinessException.class,()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/ma*",null));
+    }
+
+    @Test void snapshotOnDeletedBranchMapsToSourceRefNotFound() {
+        // 契约 40405：允许清单内的分支在远端已被删除（单 ref 端点 404）→ 404 语义，
+        // 而非落入 SHA 格式校验的 409 RESOURCE_CONFLICT。
+        mainMissing=true;
+        var error=assertThrows(BusinessException.class,
+                ()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/main",null));
+        assertEquals(ErrorCode.SOURCE_REF_NOT_FOUND,error.getErrorCode());
     }
 
     @Test void policyUpdatesAreOptimisticAndVersioned() {
