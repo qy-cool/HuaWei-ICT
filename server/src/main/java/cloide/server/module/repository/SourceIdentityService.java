@@ -142,7 +142,7 @@ public class SourceIdentityService {
     private String persist(long project,long remoteId,String operation,UUID requestId,String digest,
             String ref,String commitSha,String treeSha,long generation,long policyVersion) {
         return tx.execute(status->{
-            repositories.activeBinding(project,remoteId);
+            repositories.lockActiveGeneration(project, remoteId, generation);
             String snapshotId=UUID.randomUUID().toString();
             // 显式写入 UTC 墙上时间，不依赖 DDL 默认值（默认走会话时区，与列注释“UTC 解析时间”不符）。
             jdbc.update("""
