@@ -32,6 +32,7 @@ class SourceIdentityTests {
     private final ObjectMapper json=new ObjectMapper();
     private final ProjectAccess access=mock(ProjectAccess.class);
     private final AtomicReference<Throwable> failure=new AtomicReference<>();
+    private final AtomicReference<Runnable> beforeTreeResponse=new AtomicReference<>();
     private JdbcTemplate jdbc;
     private HttpServer server;
     private GitHubApp app;
@@ -105,7 +106,11 @@ class SourceIdentityTests {
             if(p.equals("/repos/acme/orders/git/ref/heads/main")) {
                 reply(e,200,Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha))); return;
             }
-            if(p.equals("/repos/acme/orders/git/commits/"+X)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_X))); return; }
+            if(p.equals("/repos/acme/orders/git/commits/"+X)) {
+                Runnable callback=beforeTreeResponse.getAndSet(null);
+                if(callback!=null) callback.run();
+                reply(e,200,Map.of("tree",Map.of("sha",TREE_X))); return;
+            }
             if(p.equals("/repos/acme/orders/git/commits/"+Y)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_Y))); return; }
             fail("unexpected route "+p);
         } catch(Throwable err) {
@@ -198,6 +203,28 @@ class SourceIdentityTests {
         var stillOld=service.snapshotRow(1,pinned.snapshotId());
         assertEquals(1,stillOld.bindingGeneration());
         assertFalse(stillOld.bindingActive());
+    }
+
+    @Test void rebindWhileResolvingTreeDiscardsSnapshotAndAllowsRetry() {
+        UUID requestId=UUID.randomUUID();
+        // 分支已解析，在提交树返回前由另一个连接撤销并重绑。
+        beforeTreeResponse.set(()->{
+            repositories.unlink(1,8);
+            link(1,8,"acme","orders","main");
+        });
+
+        var error=assertThrows(BusinessException.class,
+                ()->service.snapshot(1,8,requestId,"refs/heads/main",X));
+        assertEquals(ErrorCode.RESOURCE_NOT_FOUND,error.getErrorCode());
+        assertEquals(0L,jdbc.queryForObject("SELECT COUNT(*) FROM source_snapshots",Long.class));
+        assertEquals(0L,jdbc.queryForObject("SELECT COUNT(*) FROM repository_idempotent_requests",Long.class));
+
+        var retried=service.snapshot(1,8,requestId,"refs/heads/main",X);
+        assertEquals(2,retried.bindingGeneration());
+        assertTrue(retried.bindingActive());
+        assertEquals(retried,service.snapshot(1,8,requestId,"refs/heads/main",X));
+        assertEquals(1L,jdbc.queryForObject("SELECT COUNT(*) FROM source_snapshots",Long.class));
+        assertEquals(1L,jdbc.queryForObject("SELECT COUNT(*) FROM repository_idempotent_requests",Long.class));
     }
 
     @Test void sameRemoteIdCannotServeTwoProjects() {
