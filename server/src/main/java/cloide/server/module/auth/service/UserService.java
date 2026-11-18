@@ -41,6 +41,9 @@ public interface UserService {
      */
     LoginVo login(LoginRequest request);
 
+    /** 企业身份已验签并映射到本地用户后，按当前账户状态签发平台登录。 */
+    LoginVo loginVerifiedIdentity(long userId);
+
     /**
      * 分页查询普通用户（管理面列表，status 可过滤审核状态）。
      *

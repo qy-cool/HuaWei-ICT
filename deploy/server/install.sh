@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cloide-shell Java 后端一次性安装脚本（仅在不重复执行的前提下使用）
+# Cloide 中控 JAR 和 systemd 单元安装器。
 #
 # 此脚本以 root 身份执行：
 #   1. 创建专用 cloide 系统用户
@@ -8,14 +8,12 @@
 #   4. 安装 systemd unit
 #
 # 凭据、JWT/AES/Agent 密钥不得写入此文件或仓库。
-# 仅当目标主机唯一用于本次部署且已备份现有 /opt/cloide 时执行。
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-RELEASE_ID="${RELEASE_ID:-REPLACE_WITH_RELEASE_ID}"
 RELEASES_DIR="${RELEASES_DIR:-/opt/cloide/releases}"
 SERVER_DIR="${SERVER_DIR:-/opt/cloide/server}"
 ENV_FILE="${ENV_FILE:-/etc/cloide/server.env}"
@@ -23,6 +21,18 @@ JAR_PATH="${JAR_PATH:-$REPO_ROOT/server/target/cloide-server-0.0.1-SNAPSHOT.jar}
 
 if [ ! -f "$JAR_PATH" ]; then
     echo "[install] FATAL: JAR not found at $JAR_PATH" >&2
+    exit 1
+fi
+
+jar_digest=$(sha256sum -- "$JAR_PATH" | cut -d ' ' -f 1)
+RELEASE_ID="${RELEASE_ID:-${jar_digest:0:16}}"
+if [[ ! "$RELEASE_ID" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$ ]]; then
+    echo "[install] invalid release identifier" >&2
+    exit 1
+fi
+target_jar="$RELEASES_DIR/$RELEASE_ID/cloide-server-0.0.1-SNAPSHOT.jar"
+if [[ -e "$target_jar" ]] && ! cmp -s -- "$JAR_PATH" "$target_jar"; then
+    echo "[install] release identifier already belongs to a different JAR" >&2
     exit 1
 fi
 
@@ -41,10 +51,22 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "[install] installed $ENV_FILE from template; must edit secrets manually"
 fi
 
-install -m 0644 -o root -g root "$JAR_PATH" "$RELEASES_DIR/$RELEASE_ID/cloide-server-0.0.1-SNAPSHOT.jar"
+if [[ ! -e "$target_jar" ]]; then
+    install -m 0644 -o root -g root "$JAR_PATH" "$target_jar"
+fi
 
-ln -sfn "$RELEASES_DIR/$RELEASE_ID/cloide-server-0.0.1-SNAPSHOT.jar" "$SERVER_DIR/cloide-server.jar"
+previous_target=$(readlink "$SERVER_DIR/cloide-server.jar" || true)
+ln -sfn "$target_jar" "$SERVER_DIR/cloide-server.jar"
 
 systemctl daemon-reload
-systemctl enable --now cloide-server
+if grep -Eq '^[^#[:space:]][^=]*=.*REPLACE_WITH_' "$ENV_FILE"; then
+    echo "[install] installed $RELEASE_ID. Configure $ENV_FILE, then run systemctl enable --now cloide-server."
+    exit 0
+fi
+systemctl enable cloide-server
+if systemctl is-active --quiet cloide-server && [[ "$previous_target" != "$target_jar" ]]; then
+    systemctl restart cloide-server
+else
+    systemctl start cloide-server
+fi
 systemctl status cloide-server --no-pager

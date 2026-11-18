@@ -60,8 +60,20 @@ public class ApiResponse<T> {
      * @param message 自定义错误消息
      * @return 错误响应
      */
-    public static ApiResponse<Void> error(ErrorCode errorCode, String message) {
+    public static <T> ApiResponse<Void> error(ErrorCode errorCode, String message) {
         return new ApiResponse<>(errorCode.getCode(), message, null);
+    }
+
+    /**
+     * 创建携带冲突上下文数据的错误响应（如分支前移后的实际 SHA），供客户端继续处理。
+     *
+     * @param errorCode 业务错误码
+     * @param message   错误消息
+     * @param data      最小冲突上下文，不含敏感值
+     * @return 携带 data 的错误响应
+     */
+    public static ApiResponse<Object> error(ErrorCode errorCode, String message, Object data) {
+        return new ApiResponse<>(errorCode.getCode(), message, data);
     }
 
     /**

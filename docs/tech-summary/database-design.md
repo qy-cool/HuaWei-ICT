@@ -1,6 +1,6 @@
 # cloide-shell 数据库设计
 
-> 权威 DDL 是 `server/src/main/resources/db/migration/` 下的 Flyway 脚本（当前 V1–V37）。
+> 权威 DDL 是 `server/src/main/resources/db/migration/` 下的 Flyway 脚本。
 > 本文按表用途、关键约束与保留策略整理，不替代迁移脚本。
 
 ## 1. 约定
@@ -39,6 +39,24 @@
 | AI | `ai_command_runs` | 命令域执行记录（模板、参数、审批、结果、审计） |
 | AI | `ai_command_auto_approval_policies` | 自动审批策略与观察期配置 |
 | AI | `ai_user_provider_configs` | 用户级 AI Provider 配置（endpoint/model/key 密文） |
+
+## 企业工程模块的新增迁移
+
+| 版本 | 表 | 恢复与归属 |
+|---|---|---|
+| V38 | projects、project_members、project_environments、project_nodes | 项目成员与节点的独占环境分配，升级时保留历史节点 |
+| V39 | project_runs、project_run_logs | 以用户请求幂等键去重，以作业号和日志序号恢复查询 |
+| V40 | node_enrollment_tickets | 十分钟有效的一次性邀请，仅存 SHA-256 摘要，兑换与发放节点身份同事务提交 |
+| V41 | workspaces、workspace_credentials | 身份票据绑定工作区和访问者，服务端重新检查归属 |
+| V42 | project_artifacts、release_targets、project_releases、release_events | 制品引用、服务代次、节点回执和发布审计；恢复时另需校验制品文件 |
+| V43 | project_coding_tasks、project_coding_events、project_coding_decisions | 项目编码任务、按序号续读的事件和批准决定 |
+| V44 | GitHub 仓库绑定、编码任务 PR、webhook 记录 | 仓库 ID 和交付事件用于去重 |
+| V45 | OIDC 身份映射及授权状态 | 以固定发行方与主体映射本地账号 |
+| V46 | 工作区运行意图与节点观察 | 睡眠、唤醒与过期观察按代次处理 |
+| V47 | node_connection_owners | 同一节点最新认证连接的实例与会话归属 |
+| V48 | node_job_capabilities | 最近资源快照、工具链与按项目登记的仓库 |
+| V49 | 项目告警归属与处置 | 保留发生时的项目，关联后续发布或编码任务 |
+| V50 | project_artifacts.source_node_id | 标识实际构建并上传的节点，人工上传为空 |
 
 ## 3. 关键约束与幂等
 

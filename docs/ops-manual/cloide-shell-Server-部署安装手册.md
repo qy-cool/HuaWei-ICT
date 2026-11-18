@@ -1,6 +1,6 @@
 # cloide-shell Server 部署安装手册
 
-**适用范围**：Java 后端 + 依赖组件（MySQL / RabbitMQ / Nginx）从零到上线的安装与启动操作。当前没有 Web 前端；客户端为 Android App 或直接调用 REST/WebSocket。
+**适用范围**：Java 后端 + 依赖组件（MySQL / RabbitMQ / Nginx）从零到上线的安装与启动操作。Android 客户端、API 工具及企业集成服务通过 REST/WebSocket 接入。自研管理台框架由负责人另行选择。
 **配套资产**：`deploy/server/`（install.sh、systemd unit、nginx 模板、env 模板、backup/restore）。
 **Go Agent 安装**：见 `docs/ops-manual/Go-Agent 部署使用手册.md`。
 
@@ -34,7 +34,7 @@ Go Agent（部署到被监控服务器）
 | MySQL | 8.4（本地）；华为云 RDS 8.0 | Flyway V1-V37；`utf8mb4`；专用账号最小权限 |
 | RabbitMQ | 4.3.x + Erlang 27.x | RabbitMQ 4.3 与 Erlang 29 不兼容（horus），按官方支持矩阵选 Erlang 27 |
 | Nginx | 1.24+ | 反代 REST/WS；不再需要 SPA fallback |
-| Node.js | 不需要 | 当前没有 Web 前端；后续 React 前端建立后再引入 |
+| Node.js | 不需要 | Java 中控无需 Node.js；选装 Pi 编码节点需要 Node.js 24 |
 
 ## 三、从零安装流程
 
@@ -98,7 +98,7 @@ sudo systemctl restart cloide-server
 | `SERVER_ADDRESS=127.0.0.1` `SERVER_PORT=18080` | 生产仅回环监听，由 Nginx 反代 |
 | `SPRING_RABBITMQ_*` | RabbitMQ 连接（host/port/virtual-host/username/password） |
 | `AGENT_TRUSTED_PROXY_CIDRS` | 反向代理信任列表（生产默认仅本机） |
-| `CORS_ALLOWED_ORIGINS` | 浏览器来源白名单；当前没有 Web 前端，留空即可 |
+| `CORS_ALLOWED_ORIGINS` | 根据企业客户端实际 HTTPS 来源配置，纯 API 调用可留空 |
 | `ALERT_NOTIFICATION_ENABLED` | 告警外部通知总开关，默认 `false` |
 | `MAIL_*` / `ALERT_MAIL_FROM` | 邮件告警 SMTP（不配置则邮件通道自动跳过） |
 | `AUTH_BOOTSTRAP_TOKEN` | 首管理员一次性初始化令牌（可选，见 §五） |

@@ -46,7 +46,7 @@ sudo install -m 0600 -o root -g root deploy/server/cloide-server.env.example /et
 sudo install -m 0644 deploy/server/cloide-server.service /etc/systemd/system/cloide-server.service
 ```
 
-在受控编辑器中填写 `/etc/cloide/server.env` 的实际值。必须保持 `APP_ENV=prod`、`SERVER_ADDRESS=127.0.0.1`，并当前没有 Web 前端，`CORS_ALLOWED_ORIGINS` 留空；接入浏览器端时填实际来源。
+在受控编辑器中填写 `/etc/cloide/server.env` 的实际值。必须保持 `APP_ENV=prod`、`SERVER_ADDRESS=127.0.0.1`，使用 API 工具的部署可以留空 `CORS_ALLOWED_ORIGINS`；接入独立客户端时填写企业授权的 HTTPS 来源。
 
 创建当前版本 JAR 的只读链接后执行：
 
@@ -62,14 +62,16 @@ sudo systemctl status cloide-server --no-pager
 ## Nginx 合并与验证
 
 1. 备份当前 Nginx 站点配置并验证备份可读。
-2. 将 `deploy/server/nginx.conf.example` 的 location 块合并到对应 HTTPS `server` 块；不得覆盖整份 Nginx 配置。
-3. TLS 证书按实际环境配置；本模板没有前端静态目录。
+2. 确认 Java 监听回环，网关对外仅开放所需的 API 与 WebSocket 入口。
+3. 将模板的请求体上限和 location 块合并到对应 HTTPS 站点，按企业域名配置 TLS 证书。两个经中控鉴权的制品上传入口默认允许 128 MiB，其余 API 保留 16 MiB 上限。调整制品上限时须同步应用和构建节点设置。
 4. 在目标主机执行 `nginx -t`，通过后由 `systemctl reload nginx` 重载。
 5. 从公网验证 HTTPS、`/api/health`、`/api/ready`、`/ws/agent` 和 `/ws/monitor`；分别记录结果。
 
 Nginx 默认访问日志不包含 WebSocket 帧正文。不要为排障记录终端消息体、Ticket、JWT 或 Agent Token。
 
 ## 数据库备份与发布
+
+企业自托管实例可将 MySQL、密钥材料和不可变制品放入同一份加密备份，恢复至独立数据库和新目录后再进行节点对账。操作和验证命令见[中控加密备份与旁路恢复](../recovery/README.md)。
 
 在执行会触发 Flyway 的首次启动或版本升级前：
 
@@ -79,11 +81,11 @@ Nginx 默认访问日志不包含 WebSocket 帧正文。不要为排障记录终
 4. 再启动应用，由 Flyway 执行向前迁移；禁止修改或重置已执行的迁移历史。
 5. 检查 `GET /api/health`、`GET /api/ready`、`systemctl status` 和 Flyway 日志后才宣布发布完成。
 
-> **2026-07-31 更新（MVP-8）**：本仓库现已提供备份与恢复脚本——`deploy/server/backup.sh`（mysqldump 一致性全量 + server.env 密钥 + 校验轮换）与 `deploy/server/restore.sh`（备份包校验 + 覆盖式恢复 + 验证清单），操作见 `docs/ops-manual/cloide-shell-备份与恢复手册.md`。脚本同样要求先确认目标与影响范围，恢复前必须停止应用。
+> 旧监控部署可继续使用 `deploy/server/backup.sh` 和 `restore.sh`。归档包含数据库及环境文件的明文，使用该部署专属的私有备份目录。启用了工程制品或文件型密钥的实例使用上方的中控加密备份与旁路恢复流程。
 
 ## 升级与回滚
 
-升级前保留当前 JAR 路径和已验证的数据库备份。升级仅替换 JAR 软链接后重启服务：
+升级前保留当前 JAR 路径和已验证的备份。生产配置在既有环境文件未指定制品目录时使用 `/var/lib/cloide/artifacts`，由现有的 cloide 服务用户创建。此前指定了其他制品目录的部署应保留原设置，或先迁移并校验实际制品。通过软链接切换 JAR 并重启服务。
 
 ```bash
 sudo ln -sfn /opt/cloide/releases/NEW_RELEASE/cloide-server-0.0.1-SNAPSHOT.jar /opt/cloide/server/cloide-server.jar
@@ -94,4 +96,4 @@ sudo systemctl restart cloide-server
 
 ## 验收记录边界
 
-仓库内可验证的内容是 Maven Wrapper、JAR 构建和部署文件静态结构。目标主机 systemd、Nginx、MySQL 备份、HTTPS/WSS、公网防火墙和真实 Agent 链路必须在真实环境中单独验证和记录。
+在装有 Python 3、Nginx、OpenSSL 和 GNU coreutils 的 Linux 主机，可从源码根运行 `python3 scripts/release/verify-linux-gateway.py`。该检查在随机回环端口加载模板、通过 HTTPS 校验静态路由、身份请求头及两个制品入口的大小上限。备份权限和失败清理使用模拟的 mysqldump 输出进行验收。自定义 Nginx 若将 Lua 模块安装在专有前缀，可通过 `CLOIDE_TEST_NGINX_LUA` 指定包含 `resty/core.lua` 的目录。企业公网证书、生产鉴权、中控持久数据及实际 Agent 链路另行验收。

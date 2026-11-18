@@ -1,0 +1,1122 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GitHub App 仓库、任务 PR 与 Webhook",
+    "version": "1.0.0"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/projects/{projectId}/repositories": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listConnectedRepositories",
+        "summary": "返回该项目的授权连接",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Repository"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      },
+      "post": {
+        "operationId": "generateProjectRepository",
+        "summary": "管理员在企业组织中从指定模板创建私有仓库",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "name",
+                  "requestId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Repository"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/repositories/import": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "importGitHubRepository",
+        "summary": "管理员导入已授权仓库",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Repository"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/repositories/{repositoryId}": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "repositoryId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "unlinkGitHubRepository",
+        "summary": "管理员撤销本平台项目连接",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/repositories/{repositoryId}/pulls": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "repositoryId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listTaskPulls",
+        "summary": "列出最近 100 个任务 PR",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Pull"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      },
+      "post": {
+        "operationId": "publishTaskPull",
+        "summary": "为可审查任务发布新分支和 PR；同任务可恢复",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "taskId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Pull"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/repositories/{repositoryId}/source-policy": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "repositoryId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "updateRepositorySourcePolicy",
+        "summary": "平台管理员设置允许分支清单；expectedPolicyVersion 乐观并发，同 requestId 重放返回原版本",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "expectedPolicyVersion": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "allowedRefs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 32
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "expectedPolicyVersion",
+                  "allowedRefs"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SourcePolicy"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效或 ref 不在允许格式（40005）"
+          },
+          "401": {
+            "description": "认证失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "策略版本乐观锁冲突或幂等键参数不符（40908）"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/repositories/{repositoryId}/refs": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "repositoryId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "format": "int32",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listRepositoryRefs",
+        "summary": "读时观察：列出当前允许分支及其提交 SHA；分支可能随时前移",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/RefPage"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "上游数据异常"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/repositories/{repositoryId}/snapshots": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "repositoryId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "createSourceSnapshot",
+        "summary": "项目开发者把允许分支钉住为不可变提交快照；expectedCommitSha 不符返回 40907 并携带当前实际 SHA",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "example": "refs/heads/main"
+                  },
+                  "expectedCommitSha": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "ref"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SourceSnapshot"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效或 ref 不在允许清单（40005）"
+          },
+          "401": {
+            "description": "认证失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源不可见或解析开始时的仓库绑定代次已失效（40400），或远端分支不存在（40405）"
+          },
+          "409": {
+            "description": "分支前移（40907，data 携带 currentCommitSha）或幂等键参数冲突（40908）"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/snapshots/{snapshotId}": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "snapshotId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getSourceSnapshot",
+        "summary": "项目可读；跨项目请求 404 且不暴露仓库或 ref 信息；绑定撤销后仍可审计",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SourceSnapshot"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "上游数据异常"
+          },
+          "503": {
+            "description": "服务暂不可用"
+          }
+        }
+      }
+    },
+    "/api/integrations/github/webhook": {
+      "post": {
+        "operationId": "receiveSignedGitHubDelivery",
+        "summary": "校验最初收到的原始字节、GitHub 安装及交付 ID，记录 PR 状态与移除授权",
+        "security": [],
+        "parameters": [
+          {
+            "name": "X-GitHub-Event",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hub-Signature-256",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-GitHub-Delivery",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效"
+          },
+          "401": {
+            "description": "认证或 HMAC-SHA-256 签名校验失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          },
+          "409": {
+            "description": "远端分支、任务内容或交付标识发生冲突"
+          },
+          "503": {
+            "description": "GitHub App 未配置或远端服务暂时不可用"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Repository": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "remoteId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "repoName": {
+            "type": "string"
+          },
+          "defaultBranch": {
+            "type": "string"
+          },
+          "installationId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "linkedBy": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "projectId",
+          "remoteId",
+          "ownerName",
+          "repoName",
+          "defaultBranch",
+          "installationId",
+          "linkedBy"
+        ]
+      },
+      "Pull": {
+        "type": "object",
+        "properties": {
+          "remoteId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prNumber": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "baseSha": {
+            "type": "string"
+          },
+          "prState": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "remoteId",
+          "taskId",
+          "prNumber",
+          "headSha",
+          "baseSha",
+          "prState",
+          "requestedBy"
+        ]
+      },
+      "SourcePolicy": {
+        "type": "object",
+        "description": "仓库允许来源策略；版本 0 为隐式默认（仅登记时默认分支），不落库",
+        "properties": {
+          "repositoryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "allowedRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "repositoryId",
+          "policyVersion",
+          "allowedRefs"
+        ]
+      },
+      "RefPage": {
+        "type": "object",
+        "description": "读时观察结果；commitSha 为 null 表示远端分支已不存在",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "commitSha": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "ref"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "SourceSnapshot": {
+        "type": "object",
+        "description": "不可变提交快照；bindingActive=false 表示绑定已撤销，仅供审计",
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repositoryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "treeSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "bindingGeneration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resolvedAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bindingActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "snapshotId",
+          "repositoryId",
+          "ref",
+          "commitSha",
+          "treeSha",
+          "bindingGeneration",
+          "policyVersion",
+          "resolvedAt",
+          "createdBy",
+          "bindingActive"
+        ]
+      }
+    }
+  }
+}

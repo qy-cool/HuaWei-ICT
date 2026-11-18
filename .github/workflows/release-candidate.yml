@@ -1,0 +1,108 @@
+name: Build self-hosted release candidate
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Verify backend services, Linux agents and coding worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          epoch=$(git log -1 --format=%ct)
+          (cd server && bash mvnw -B -ntp -Dproject.build.outputTimestamp="$epoch" package)
+          (cd agent && go vet ./... && go test ./...)
+          (cd deploy/workspace/session-guard && go test ./...)
+          (cd worker && npm ci && npm test)
+          (cd examples/orders/api && mvn -B -ntp verify)
+          node scripts/check-openapi.mjs
+      - name: Assemble the two Linux kits
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=v0.0.0-local
+          if [[ "$GITHUB_REF_TYPE" = tag ]]; then version="$GITHUB_REF_NAME"; fi
+          epoch=$(git log -1 --format=%ct)
+          mkdir -p .artifacts/kit/bin
+          for arch in amd64 arm64; do
+            (cd agent && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -o "../.artifacts/kit/bin/agent-$arch" ./cmd/cloide-agent)
+            (cd deploy/workspace/session-guard && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -o "../../../.artifacts/kit/bin/guard-$arch" .)
+            python3 scripts/release/build-kit.py --arch "$arch" --version "$version" --epoch "$epoch" --agent ".artifacts/kit/bin/agent-$arch" --guard ".artifacts/kit/bin/guard-$arch" --output .artifacts/kit
+          done
+          cd .artifacts/kit
+          sha256sum *.tar.gz > SHA256SUMS
+      - name: Verify the backend template from an extracted kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_dir=$(mktemp -d "$RUNNER_TEMP/cloide-kit-XXXXXX")
+          tar -xzf .artifacts/kit/*-linux-amd64.tar.gz -C "$check_dir"
+          cd "$check_dir"/cloide-*-linux-amd64
+          test ! -e web
+          test ! -e examples/orders/web
+          test -f examples/orders/.gitignore
+          python3 -m venv "$check_dir/venv"
+          "$check_dir/venv/bin/pip" install -r scripts/project/requirements.txt
+          "$check_dir/venv/bin/python" scripts/project/project.py new "$check_dir/orders-test"
+          "$check_dir/venv/bin/python" scripts/project/project.py validate "$check_dir/orders-test"
+      - name: Generate software bill of materials
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          path: .artifacts/kit/stage
+          format: cyclonedx-json
+          output-file: .artifacts/kit/cloide.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Sign build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: |
+            .artifacts/kit/*.tar.gz
+            .artifacts/kit/SHA256SUMS
+            .artifacts/kit/cloide.cdx.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cloide-linux-kits
+          include-hidden-files: true
+          path: |
+            .artifacts/kit/*.tar.gz
+            .artifacts/kit/SHA256SUMS
+            .artifacts/kit/cloide.cdx.json
+      - name: Create draft release for a verified tag
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes \
+            .artifacts/kit/*.tar.gz .artifacts/kit/SHA256SUMS .artifacts/kit/cloide.cdx.json

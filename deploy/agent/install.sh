@@ -43,10 +43,15 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 检查二进制文件是否存在。
-BINARY="${SCRIPT_DIR}/cloide-agent-linux-amd64"
+case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) error "Unsupported architecture: $(uname -m)"; exit 1 ;;
+esac
+BINARY="${SCRIPT_DIR}/cloide-agent-linux-${arch}"
 if [ ! -f "${BINARY}" ]; then
     # 兼容从项目 deploy 目录直接安装的场景。
-    BINARY="${SCRIPT_DIR}/../../agent/bin/cloide-agent-linux-amd64"
+    BINARY="${SCRIPT_DIR}/../../agent/bin/cloide-agent-linux-${arch}"
 fi
 if [ ! -f "${BINARY}" ]; then
     error "Binary not found. Run 'make build-linux' first, then copy the binary and this script to the server."

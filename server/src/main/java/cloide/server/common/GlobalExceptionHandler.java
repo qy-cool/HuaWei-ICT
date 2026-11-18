@@ -34,12 +34,13 @@ public class GlobalExceptionHandler {
 
     /**
      * 处理业务异常，从异常中提取 ErrorCode 并返回对应的 HTTP 状态和响应体。
+     * 携带冲突上下文数据时（如分支前移后的实际 SHA），透出到错误响应的 data 字段。
      *
      * @param exception 业务异常，携带 ErrorCode
      * @return 统一错误响应，状态码和文案由 ErrorCode 决定
      */
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
+    public ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessException exception) {
         ErrorCode errorCode = exception.getErrorCode();
         LOGGER.warn("Business exception: {}", errorCode.getMessage());
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(errorCode.getHttpStatus());
@@ -47,7 +48,11 @@ public class GlobalExceptionHandler {
             // 登录防爆破：告知客户端窗口秒数后再试。
             builder.header("Retry-After", String.valueOf(loginLimitWindowSeconds));
         }
-        return builder.body(ApiResponse.error(errorCode));
+        if (exception.getData() != null) {
+            return builder.body(ApiResponse.error(errorCode, errorCode.getMessage(), exception.getData()));
+        }
+        // 泛型不变：无数据路径也走 Object 工厂，统一返回 ApiResponse<Object>。
+        return builder.body(ApiResponse.error(errorCode, errorCode.getMessage(), null));
     }
 
     /**

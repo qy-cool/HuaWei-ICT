@@ -24,6 +24,8 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(40400, "resource not found", HttpStatus.NOT_FOUND),
     TERMINAL_SESSION_NOT_FOUND(40403, "terminal session not found", HttpStatus.NOT_FOUND),
     RESOURCE_CONFLICT(40900, "resource conflict", HttpStatus.CONFLICT),
+    GITHUB_APP_NOT_CONFIGURED(50307, "GitHub App configuration unavailable", HttpStatus.SERVICE_UNAVAILABLE),
+    GITHUB_API_UNAVAILABLE(50308, "GitHub request not confirmed; retry the same operation", HttpStatus.SERVICE_UNAVAILABLE),
     SSH_HOST_KEY_NOT_CONFIRMED(40901, "ssh host key not confirmed", HttpStatus.CONFLICT),
     SSH_HOST_KEY_MISMATCH(40902, "ssh host key mismatch", HttpStatus.CONFLICT),
     TERMINAL_SESSION_STATE_CONFLICT(40903, "terminal session state conflict", HttpStatus.CONFLICT),
@@ -53,6 +55,14 @@ public enum ErrorCode {
     COMMAND_RUN_NOT_FOUND(40404, "command run not found", HttpStatus.NOT_FOUND),
     COMMAND_RUN_STATE_CONFLICT(40905, "command run state conflict", HttpStatus.CONFLICT),
     COMMAND_AGENT_OFFLINE(40906, "command agent offline", HttpStatus.CONFLICT),
+    // A1 仓库身份：ref 不在允许清单或格式非法（如通配符、非 refs/heads 前缀）。
+    SOURCE_REF_NOT_ALLOWED(40005, "source ref not allowed", HttpStatus.BAD_REQUEST),
+    // A1 仓库身份：期望提交与现场解析结果不符（分支前移），data 携带当前实际 SHA 供客户端重读。
+    SOURCE_COMMIT_MOVED(40907, "expected commit sha does not match the current ref", HttpStatus.CONFLICT),
+    // A1 仓库身份：同名幂等键携带不同业务参数，或策略版本乐观锁冲突。
+    SOURCE_REQUEST_CONFLICT(40908, "source request conflict", HttpStatus.CONFLICT),
+    // A1 仓库身份：GitHub 上分支或提交不存在（404），区别于安装权限被撤（403 走 GITHUB_API_UNAVAILABLE）。
+    SOURCE_REF_NOT_FOUND(40405, "source ref not found on remote", HttpStatus.NOT_FOUND),
     COMMAND_EXECUTION_TIMEOUT(50402, "command execution timeout", HttpStatus.GATEWAY_TIMEOUT);
 
     private final int code;

@@ -20,6 +20,20 @@ public final class AgentWebSocketSession {
     // 认证进行中标记：避免认证未完成时被未认证超时扫描误关闭。
     private volatile boolean authenticating;
     private boolean authenticated;
+    private volatile boolean jobProtocol;
+
+    public void enableJobProtocol() {
+        jobProtocol = true;
+    }
+
+    private volatile java.time.Instant lastCapabilitiesAt;
+    public boolean needsCapabilitiesRefresh(java.time.Instant now) {
+        return lastCapabilitiesAt == null || !now.isBefore(lastCapabilitiesAt.plusSeconds(60));
+    }
+    public void capabilitiesUpdated(java.time.Instant now) { lastCapabilitiesAt = now; }
+    public boolean supportsJobProtocol() {
+        return jobProtocol;
+    }
 
     /** 创建未认证的 WebSocket 会话包装。 */
     public AgentWebSocketSession(WebSocketSession socketSession, Clock clock) {

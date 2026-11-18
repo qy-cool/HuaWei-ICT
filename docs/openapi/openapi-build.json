@@ -1,0 +1,101 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "构建节点制品",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/build-agent/{jobId}/artifact": {
+      "post": {
+        "operationId": "uploadVerifiedBuildArtifact",
+        "summary": "已认证构建节点上传实际测试产生的文件",
+        "security": [
+          {
+            "agentToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "serverId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "commit",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Content-SHA256",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "相同作业和摘要幂等登记，data.sourceNodeId 是已认证的实际构建节点"
+          },
+          "403": {
+            "description": "成员或节点授权已撤销"
+          },
+          "409": {
+            "description": "作业未成功或提交不符"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "agentToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Agent-Token"
+      }
+    }
+  }
+}

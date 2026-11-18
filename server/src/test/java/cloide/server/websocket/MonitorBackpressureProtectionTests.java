@@ -37,7 +37,7 @@ class MonitorBackpressureProtectionTests {
         properties.getTerminal().setMonitorSendTimeLimitMillis(3210);
         properties.getTerminal().setMonitorBufferSizeBytes(654321);
         MonitorWebSocketHandler handler = new MonitorWebSocketHandler(new ObjectMapper(), mock(ServerMapper.class), registry,
-                Clock.systemUTC(), null, null, null, null, properties);
+                Clock.systemUTC(), null, null, null, null, properties, new LegacyMonitorAccess(false, null));
 
         handler.afterConnectionEstablished(socket);
 

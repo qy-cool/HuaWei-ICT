@@ -32,6 +32,8 @@ public class AgentTokenServiceImpl implements AgentTokenService {
     private static final ZoneId APPLICATION_ZONE = ZoneOffset.UTC;
 
     private final ServerMapper serverMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cloide.server.websocket.AgentConnectionRegistry connections;
     private final SecureRandom secureRandom = new SecureRandom();
     /** 全局配置：读取轮换宽限窗口时长（cloide.agent.token-grace-seconds）。 */
     private final cloide.server.config.AppProperties appProperties;
@@ -68,6 +70,7 @@ public class AgentTokenServiceImpl implements AgentTokenService {
                     || serverMapper.revokeAgentToken(serverId, LocalDateTime.now(ZoneOffset.UTC)) != 1) {
                 throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
             }
+            if (connections != null) connections.revokeOnCommit(serverId);
         } catch (DataAccessException exception) {
             // 数据库层失败必须留根因线索：2026-09-14 联调发现 V35 列宽缺陷时仅有 50001 无堆栈，排障困难。
             log.warn("agent token write failed for server {}: {}", serverId, exception.toString());

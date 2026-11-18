@@ -189,13 +189,13 @@ public class UserServiceImpl implements UserService {
         }
 
         if (firstUser) {
-            if (authBootstrapStateMapper.markAdminInitialized(
-                    userEntity.getId(), userEntity.getCreatedAt()) != 1) {
-                throw new BusinessException(ErrorCode.DATABASE_ERROR);
-            }
-            // 与初始化标记同事务消费令牌：置空密文并记录消费时间，令牌就此作废。
+            // 消费 SQL 只匹配 admin_initialized=0，两个写入同属当前行锁事务。
             if (authBootstrapStateMapper.consumeBootstrapToken(
                     LocalDateTime.now(ZoneOffset.UTC)) != 1) {
+                throw new BusinessException(ErrorCode.DATABASE_ERROR);
+            }
+            if (authBootstrapStateMapper.markAdminInitialized(
+                    userEntity.getId(), userEntity.getCreatedAt()) != 1) {
                 throw new BusinessException(ErrorCode.DATABASE_ERROR);
             }
             log.info("first admin registered (userId={}); bootstrap token consumed",
@@ -228,6 +228,16 @@ public class UserServiceImpl implements UserService {
         if (userEntity == null || userEntity.getPasswordHash() == null || !passwordMatches) {
             throw new BusinessException(ErrorCode.INVALID_USERNAME_OR_PASSWORD);
         }
+        return issueSession(userEntity);
+    }
+
+    public LoginVo loginVerifiedIdentity(long userId) {
+        UserEntity user = userMapper.selectAuthenticationUserById(userId);
+        if (user == null) throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        return issueSession(user);
+    }
+
+    private LoginVo issueSession(UserEntity userEntity) {
         if (!APPROVED_STATUS.equals(userEntity.getReviewStatus()) || !validRole(userEntity.getRole())) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }

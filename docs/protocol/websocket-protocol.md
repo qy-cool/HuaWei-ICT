@@ -69,7 +69,18 @@ After ticket-authenticated handshake, a browser sends:
 }
 ```
 
-`metrics.unsubscribe` removes a subscription. Duplicate subscriptions are idempotent. Only admin or approved users may subscribe to an active server.
+`metrics.unsubscribe` removes a subscription. Duplicate subscriptions are idempotent.
+
+企业多项目部署在所有中控设置 `PROJECT_ISOLATION_ENABLED=true` 后重启。已存在的
+Monitor 连接随节点重启关闭。全局监控、旧终端及告警仅向已审核的平台管理员开放。
+项目成员通过 `GET /api/projects/{projectId}/nodes` 获取所属节点的 Agent 状态，通过项目
+运行接口读取测试结果。兼容模式（旧实例没有配置此变量时的默认行为）允许已审核用户订阅指标。
+
+项目隔离模式下，普通成员向 `POST /api/ws/monitor-ticket` 请求全局票据会收到
+40300。已签发的票据在 `/ws/monitor` 握手时先原子消费，再核对签发快照和账号当前
+角色与审核状态。无权使用的票据返回 HTTP 403，重放、无效或过期票据返回 HTTP 401。
+活动连接在收取下一帧时复核，空闲连接也会由中控每 10 秒一轮复核。权限失效时解除
+订阅和终端路由，以 WebSocket 1008 关闭连接。多个中控须使用一致的隔离配置。
 
 After a committed Metrics transaction, subscribers receive:
 

@@ -40,6 +40,8 @@ go build -o bin/cloide-agent ./cmd/cloide-agent
 
 ## 文档
 
+可选的开发节点支持受控仓库测试、断线重放及持久结果，通过 `CLOIDE_JOB_MANIFEST` 指定仓库与隔离工具链。配置与回归步骤见[节点作业协议](../docs/protocol/node-jobs-v1.md)。
+
 - WS 协议：`docs/protocol/websocket-protocol.md`
 - 命令协议：`docs/protocol/command-protocol-v1.md`
 - 部署：`docs/ops-manual/Go-Agent 部署使用手册.md`

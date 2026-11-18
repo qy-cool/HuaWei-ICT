@@ -228,6 +228,7 @@
             ssh_host_key_verified_at
         FROM servers
         WHERE id = #{serverId}
+          AND ssh_auth_type != 'none'
           AND deleted = 0
     </select>
 
@@ -245,6 +246,7 @@
             ssh_host_key_fingerprint
         FROM servers
         WHERE id = #{serverId}
+          AND ssh_auth_type != 'none'
           AND deleted = 0
     </select>
 
