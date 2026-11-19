@@ -35,6 +35,15 @@ public final class AgentWebSocketSession {
         return jobProtocol;
     }
 
+    // 源码同步协议独立于作业协议协商：只有发送过 source.sync.ready 的会话才会收到同步派发。
+    private volatile boolean sourceSyncProtocol;
+    public void enableSourceSync() {
+        sourceSyncProtocol = true;
+    }
+    public boolean supportsSourceSync() {
+        return sourceSyncProtocol;
+    }
+
     /** 创建未认证的 WebSocket 会话包装。 */
     public AgentWebSocketSession(WebSocketSession socketSession, Clock clock) {
         this.socketSession = socketSession;

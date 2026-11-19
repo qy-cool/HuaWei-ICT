@@ -63,6 +63,8 @@ public enum ErrorCode {
     SOURCE_REQUEST_CONFLICT(40908, "source request conflict", HttpStatus.CONFLICT),
     // A1 仓库身份：GitHub 上分支或提交不存在（404）；安装权限被撤（403）不可重试，按 RESOURCE_CONFLICT 反馈。
     SOURCE_REF_NOT_FOUND(40405, "source ref not found on remote", HttpStatus.NOT_FOUND),
+    // A2 节点源码同步：目标节点未上报 source.sync.v1 能力（需升级 Agent 或换节点）。
+    SOURCE_SYNC_CAPABILITY_MISSING(40909, "target node does not support source.sync.v1", HttpStatus.CONFLICT),
     COMMAND_EXECUTION_TIMEOUT(50402, "command execution timeout", HttpStatus.GATEWAY_TIMEOUT);
 
     private final int code;

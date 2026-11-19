@@ -216,8 +216,8 @@ public class SourceIdentityService {
         }
     }
 
-    /** 幂等账本查询：同键同参返回原结果 ID；同键异参判定冲突。 */
-    private String idempotentResult(long project,String operation,UUID requestId,String digest) {
+    /** 幂等账本查询：同键同参返回原结果 ID；同键异参判定冲突。A2 源码同步（同包）复用同一账本与语义。 */
+    String idempotentResult(long project,String operation,UUID requestId,String digest) {
         return resolve(jdbc.queryForList("""
                 SELECT param_digest,result_id FROM repository_idempotent_requests
                 WHERE project_id=? AND requester_id=? AND operation=? AND request_id=?
@@ -241,7 +241,7 @@ public class SourceIdentityService {
         return String.valueOf(rows.getFirst().get("result_id"));
     }
 
-    private void recordIdempotent(long project,String operation,UUID requestId,String digest,String resultId) {
+    void recordIdempotent(long project,String operation,UUID requestId,String digest,String resultId) {
         try {
             jdbc.update("""
                     INSERT INTO repository_idempotent_requests(project_id,requester_id,operation,request_id,param_digest,result_id)

@@ -52,6 +52,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final TerminalRelayLifecycleService terminalRelayLifecycleService;
     private final CommandResultHandler commandResultHandler;
     private AgentJobChannel jobChannel;
+    private cloide.server.module.repository.SourceSyncChannel sourceSyncChannel;
     private final Map<String, AgentWebSocketSession> pendingSessions = new ConcurrentHashMap<>();
 
     /** 注入生产运行所需 JSON、鉴权、心跳、连接和资源限制依赖。 */
@@ -68,11 +69,13 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             TaskScheduler taskScheduler, TerminalAgentRelayService terminalRelayService,
             TerminalRelayLifecycleService terminalRelayLifecycleService,
             org.springframework.beans.factory.ObjectProvider<CommandResultHandler> commandResultHandler,
-            AgentJobChannel jobChannel) {
+            AgentJobChannel jobChannel,
+            cloide.server.module.repository.SourceSyncChannel sourceSyncChannel) {
         this(objectMapper, authenticationService, heartbeatService, connectionRegistry, metricsService, clock,
                 connectionLimiter, messageRateLimiter, taskScheduler, terminalRelayService,
                 terminalRelayLifecycleService, commandResultHandler.getIfAvailable());
         this.jobChannel = jobChannel;
+        this.sourceSyncChannel = sourceSyncChannel;
     }
 
     /** 生产构造器：命令域结果处理器为可缺省依赖（命令开关关闭时不装配）。 */
@@ -214,6 +217,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             } else if (session.authenticated() && agentMessage.type() != null && agentMessage.type().startsWith("job.")
                     && jobChannel != null) {
                 jobChannel.handle(session, agentMessage);
+            } else if (session.authenticated() && agentMessage.type() != null
+                    && agentMessage.type().startsWith("source.sync.") && sourceSyncChannel != null) {
+                sourceSyncChannel.handle(session, agentMessage);
             } else if ("command.result".equals(agentMessage.type()) && session.authenticated()) {
                 // 命令结果回填：归属校验后交给命令域状态机（execution_id 幂等）。
                 if (commandResultHandler == null) {
