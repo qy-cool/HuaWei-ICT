@@ -115,8 +115,10 @@ public class GitHubApp {
         String branch=ref.substring("refs/heads/".length());
         JsonNode object;
         if (branch.indexOf('/')<0) {
-            object=call("GET","/repos/"+owner+"/"+repo+"/git/ref/heads/"+branch,token,null,200,404)
-                    .path("object");
+            JsonNode node=call("GET","/repos/"+owner+"/"+repo+"/git/ref/heads/"+branch,token,null,200,404);
+            // 404（分支已删）与斜杠分支路径对称映射 SOURCE_REF_NOT_FOUND，不落进下方格式校验的 RESOURCE_CONFLICT。
+            if (node.isNull()) throw new BusinessException(ErrorCode.SOURCE_REF_NOT_FOUND);
+            object=node.path("object");
         } else {
             JsonNode list=call("GET","/repos/"+owner+"/"+repo+"/git/matching-refs/heads/"+branch,token,null,200,404);
             object=null;

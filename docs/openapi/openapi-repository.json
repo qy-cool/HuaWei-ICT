@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "GitHub App 仓库、任务 PR 与 Webhook",
+    "title": "GitHub App 仓库、任务 PR、提交快照与节点源码同步",
     "version": "1.0.0"
   },
   "security": [
@@ -918,6 +918,332 @@
           }
         }
       }
+    },
+    "/api/projects/{projectId}/source-syncs": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "createSourceSync",
+        "summary": "项目开发者请求把已钉住的提交快照同步到指定 dev/test 节点；目标节点须声明 source.sync.v1 能力（否则 40909）；同 requestId 原样重放返回原同步，同键异参返回 40908",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "serverId": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "snapshotId",
+                  "serverId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SourceSync"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入无效或快照格式非法"
+          },
+          "401": {
+            "description": "认证失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "快照或节点不存在（跨项目不暴露存在性）"
+          },
+          "409": {
+            "description": "幂等键参数冲突（40908）、绑定已撤销、节点无 source.sync.v1 能力（40909）"
+          },
+          "503": {
+            "description": "远端服务暂时不可用"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/source-syncs/{syncId}": {
+      "parameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "syncId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readSourceSync",
+        "summary": "项目可读；返回同步状态、已验证 commit/tree、bundle 摘要、尝试次数与最后错误；跨项目一律 404",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SourceSync"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败"
+          },
+          "403": {
+            "description": "范围或角色不允许操作"
+          },
+          "404": {
+            "description": "资源未找到"
+          }
+        }
+      }
+    },
+    "/api/source-agent/syncs/{syncId}/grant": {
+      "parameters": [
+        {
+          "name": "serverId",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "syncId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "claimSourceSyncGrant",
+        "summary": "已认证目标节点领取绑定同步、节点、绑定代次与有效期的短期下载授权；secret 仅此一次返回，服务端只保存其 SHA-256",
+        "security": [],
+        "parameters": [
+          {
+            "name": "X-Agent-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "节点凭据，与制品上传相同"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功；携带下载所需的全部事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SourceSyncGrant"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "节点凭据无效"
+          },
+          "404": {
+            "description": "同步不存在或不属于该节点"
+          },
+          "409": {
+            "description": "同步状态不允许领取授权（未就绪、已取消或已终结）"
+          }
+        }
+      }
+    },
+    "/api/source-agent/syncs/{syncId}/content": {
+      "parameters": [
+        {
+          "name": "serverId",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "syncId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "downloadSourceSyncContent",
+        "summary": "下载该同步的 Git bundle；需同时出示节点凭据（X-Agent-Token）与短期授权（X-Sync-Grant: grantId.secret）；服务端每次请求重查撤权与期限，支持 Range 断点续传",
+        "security": [],
+        "parameters": [
+          {
+            "name": "X-Agent-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "节点凭据，与制品上传相同"
+          },
+          {
+            "name": "X-Sync-Grant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "grantId.secret，领取短期授权时一次性返回"
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "bytes=1048576-"
+            },
+            "description": "按同一摘要复用已下载分段，从偏移续传"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "完整内容；Content-Length 为字节数",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "分段内容（Range 请求）",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "节点凭据或短期授权无效"
+          },
+          "404": {
+            "description": "同步不存在或不属于该节点"
+          },
+          "409": {
+            "description": "同步状态不允许下载（已撤销或已终结）"
+          },
+          "416": {
+            "description": "Range 偏移超出内容长度"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1115,6 +1441,172 @@
           "resolvedAt",
           "createdBy",
           "bindingActive"
+        ]
+      },
+      "SourceSync": {
+        "type": "object",
+        "properties": {
+          "syncId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repositoryId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "GitHub 稳定仓库 remote_id"
+          },
+          "snapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "创建时有效的绑定代次"
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "treeSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "preparing",
+              "transferring",
+              "verifying",
+              "ready",
+              "cancelling",
+              "cancelled",
+              "failed",
+              "uncertain"
+            ]
+          },
+          "bundleSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
+          },
+          "byteCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true,
+            "description": "最后错误说明，如 source_unavailable、capacity、digest_mismatch 或节点回执摘录"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "syncId",
+          "projectId",
+          "repositoryId",
+          "snapshotId",
+          "serverId",
+          "generation",
+          "commitSha",
+          "treeSha",
+          "state",
+          "deadline",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "SourceSyncGrant": {
+        "type": "object",
+        "properties": {
+          "grantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "secret": {
+            "type": "string",
+            "description": "43 位一次性展示的授权密钥，服务端只保存其 SHA-256"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "description": "该同步的完成截止时间"
+          },
+          "projectId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repositoryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "snapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "treeSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "bundleSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "byteCount": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "grantId",
+          "secret",
+          "expiresAt",
+          "deadline",
+          "projectId",
+          "repositoryId",
+          "snapshotId",
+          "generation",
+          "commitSha",
+          "treeSha",
+          "bundleSha256",
+          "byteCount"
         ]
       }
     }

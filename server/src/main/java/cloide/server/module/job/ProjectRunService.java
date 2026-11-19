@@ -4,6 +4,7 @@ import cloide.server.common.BusinessException;
 import cloide.server.common.ErrorCode;
 import cloide.server.module.project.service.ProjectAccess;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -119,6 +121,16 @@ public class ProjectRunService {
         }
     }
 
+    /**
+     * 超时终态兜底：deadline（创建后 30 分钟）加 5 分钟宽限后仍未收到节点回执的作业落
+     * uncertain。节点永久离线时这是 dispatched/running/cancelling 唯一的收敛路径
+     * （next() 依赖目标节点的活会话）；节点回归后 finish() 仍可按真实回执覆盖核实。
+     */
+    @Scheduled(fixedDelay=30000)
+    public void expireStaleRuns() {
+        store.expireStale(LocalDateTime.ofInstant(clock.instant().minus(Duration.ofMinutes(35)), ZoneOffset.UTC));
+    }
+
     @Transactional
     public void finish(long serverId, String jobId, String status, int exitCode, String output) {
         if (status == null || !ProjectRun.TERMINAL.contains(status) || output == null || output.length() > 8192
@@ -126,6 +138,11 @@ public class ProjectRunService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
         }
         ProjectRun run = store.lockForNode(serverId, jobId);
+        if (run.status().equals("uncertain")) {
+            // 服务端超时兜底标记的 uncertain 允许被节点真实回执覆盖核实（含 uncertain 回执补全明细）。
+            store.complete(jobId, status, exitCode, output);
+            return;
+        }
         if (ProjectRun.TERMINAL.contains(run.status())) {
             if (!run.status().equals(status) || !Objects.equals(run.exitCode(), exitCode)
                     || !Objects.equals(run.output(), output)) {

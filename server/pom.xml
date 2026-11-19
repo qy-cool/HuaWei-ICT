@@ -32,6 +32,7 @@
         <!-- 限流统一到 Bucket4j（2026-09-08）：替换 auth/ai/command 固定窗口与
              websocket 令牌桶的多份手写实现；jdk17-core 为单 JVM 本地桶。 -->
         <bucket4j.version>8.19.0</bucket4j.version>
+        <jgit.version>6.10.0.202406032230-r</jgit.version>
     </properties>
 
     <dependencies>
@@ -113,6 +114,12 @@
             <groupId>com.hierynomus</groupId>
             <artifactId>sshj</artifactId>
             <version>${sshj.version}</version>
+        </dependency>
+        <!-- A2 节点源码同步：JGit 纯 Java 受管 fetch 与 bundle 生成（EDL 许可，发行许可复核需覆盖）。 -->
+        <dependency>
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit</artifactId>
+            <version>${jgit.version}</version>
         </dependency>
         <!-- 限流：本地令牌桶/固定窗口统一实现（支持注入 Clock 供确定性测试）。 -->
         <dependency>

@@ -19,6 +19,7 @@ import (
 	"cloide/agent/internal/jobs"
 	"cloide/agent/internal/metricbuffer"
 	"cloide/agent/internal/reporter"
+	"cloide/agent/internal/syncs"
 	"cloide/agent/internal/wsclient"
 )
 
@@ -65,10 +66,36 @@ func main() {
 	if cfg.JobManifest != "" {
 		jobManager, err = openRepositoryJobs(ctx, cfg, client, logger)
 		if err != nil {
-			logger.Error("repository test runner initialization failed", "error", err)
-			os.Exit(1)
+			if errors.Is(err, jobs.ErrLedgerCorrupt) {
+				// 记录级账本损坏：停用执行器但保持采集与告警在线（job.* 路由与 job.ready
+				// 均以 jobManager 为空跳过），避免 systemd Restart=on-failure 下的重启风暴；
+				// 清理账本目录并重启后恢复。
+				logger.Error("repository test runner disabled by corrupt job ledger; clean the ledger directory and restart to re-enable", "error", err)
+			} else {
+				logger.Error("repository test runner initialization failed", "error", err)
+				os.Exit(1)
+			}
 		}
-		jobManager.Start()
+		if jobManager != nil {
+			jobManager.Start()
+		}
+	}
+	// 源码同步（source.sync.v1）：manifest 配置 sync_root 才启用；账本损坏时停用
+	// 同步执行器但保持采集、告警与作业路由在线，与作业账本的降级策略一致。
+	var syncManager *syncs.Manager
+	if cfg.JobManifest != "" {
+		syncManager, err = openSourceSyncs(ctx, cfg, client, logger)
+		if err != nil {
+			if errors.Is(err, syncs.ErrLedgerCorrupt) {
+				logger.Error("source sync executor disabled by corrupt ledger; clean the ledger directory and restart to re-enable", "error", err)
+			} else {
+				logger.Error("source sync initialization failed", "error", err)
+				os.Exit(1)
+			}
+		}
+		if syncManager != nil {
+			syncManager.Start()
+		}
 	}
 	// 集中消息路由：terminal.* 与 command.* 各自独立子协议，未知类型仅记调试日志。
 	client.SetMessageHandler(func(ctx context.Context, message wsclient.AgentMessage) {
@@ -80,6 +107,10 @@ func main() {
 		case strings.HasPrefix(message.Type, "job.") && jobManager != nil:
 			if err := handleRepositoryJob(jobManager, message); err != nil {
 				logger.Warn("job frame rejected", "type", message.Type, "error", err)
+			}
+		case strings.HasPrefix(message.Type, "source.sync.") && syncManager != nil:
+			if err := handleSourceSync(syncManager, message); err != nil {
+				logger.Warn("source sync frame rejected", "type", message.Type, "error", err)
 			}
 		default:
 			logger.Debug("unsupported agent message", "type", message.Type)

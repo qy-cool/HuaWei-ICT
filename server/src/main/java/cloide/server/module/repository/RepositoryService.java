@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.DataClassRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,13 @@ public class RepositoryService {
     private final CodingService coding;
     private final ObjectMapper json;
     private final org.springframework.transaction.support.TransactionTemplate tx;
+    private ObjectProvider<SourceSyncService> sourceSyncs;
+
+    /** 延迟注入，避免与 SourceSyncService 的构造循环；单测可在装配后显式挂上。 */
+    @Autowired
+    void attachSourceSyncs(ObjectProvider<SourceSyncService> sourceSyncs) {
+        this.sourceSyncs = sourceSyncs;
+    }
 
     public List<Repository> list(long project) {
         access.requireRead(project);
@@ -100,6 +109,8 @@ public class RepositoryService {
                 WHERE remote_id=? AND active=1
                 """,access.principal().id(),id);
         jdbc.update("DELETE FROM project_github_repositories WHERE project_id=? AND remote_id=?",project,id);
+        // 绑定已失效后立刻取消进行中的源码同步并作废短期授权；可重入。
+        cancelOpenSourceSyncs(id);
     }
     /** 查询当前活动绑定；仓库未绑定或属于其他项目时抛 404，不区分两种情况以免泄露其他项目存在性。 */
     public ActiveBinding activeBinding(long project,long remoteId) {
@@ -133,22 +144,41 @@ public class RepositoryService {
                 SELECT * FROM project_github_pulls WHERE project_id=? AND remote_id=? ORDER BY pr_number DESC LIMIT 100
                 """,PR,project,id);
     }
-    @Transactional(timeout=120)
     public Pull publish(long project,long id,UUID taskId) {
         access.requireDeveloper(project);
-        var repo=find(project,id,true);
+        // GitHub 全部在事务外：publish 含十余次远端往返（单次超时 15 秒），
+        // 不让 FOR UPDATE 行锁与池连接横跨网络等待（对齐 connect/persist 的短事务模式）。
+        var repo=find(project,id,false);
         if (repo.installationId()!=app.installation()) throw TaskBranch.conflict();
         var task=coding.get(project,taskId);
         if (task.createdBy()!=access.principal().id()) access.requireOwner(project);
-        var saved=jdbc.query("SELECT * FROM project_github_pulls WHERE project_id=? AND remote_id=? AND task_id=?",
-                PR,project,id,taskId.toString());
-        if (!saved.isEmpty()) return saved.getFirst();
+        var prior=taskPull(project,id,taskId);
+        if (!prior.isEmpty()) return prior.getFirst();
         var result=branches.publish(project,repo,taskId);
-        jdbc.update("""
-                INSERT INTO project_github_pulls(project_id,remote_id,task_id,pr_number,head_sha,base_sha,pr_state,remote_updated,requested_by)
-                VALUES (?,?,?,?,?,?,?,?,?)
-                """,project,id,taskId.toString(),result.number(),result.sha(),task.baseSha(),result.state(),result.updated(),access.principal().id());
-        return new Pull(id,taskId.toString(),result.number(),result.sha(),task.baseSha(),result.state(),access.principal().id());
+        return tx.execute(status->{
+            // 短事务内复核：行锁串行化并发 publish，安装变更后拒绝落库。
+            var locked=find(project,id,true);
+            if (locked.installationId()!=app.installation()) throw TaskBranch.conflict();
+            var winner=taskPull(project,id,taskId);
+            if (!winner.isEmpty()) return winner.getFirst();
+            try {
+                jdbc.update("""
+                        INSERT INTO project_github_pulls(project_id,remote_id,task_id,pr_number,head_sha,base_sha,pr_state,remote_updated,requested_by)
+                        VALUES (?,?,?,?,?,?,?,?,?)
+                        """,project,id,taskId.toString(),result.number(),result.sha(),task.baseSha(),result.state(),result.updated(),access.principal().id());
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                // 并发赢家未走行锁路径的兜底：读回既有行收敛，读不到按冲突上抛。
+                var existing=taskPull(project,id,taskId);
+                if (existing.isEmpty()) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT,e);
+                return existing.getFirst();
+            }
+            return new Pull(id,taskId.toString(),result.number(),result.sha(),task.baseSha(),result.state(),access.principal().id());
+        });
+    }
+
+    private List<Pull> taskPull(long project,long id,UUID taskId) {
+        return jdbc.query("SELECT * FROM project_github_pulls WHERE project_id=? AND remote_id=? AND task_id=?",
+                PR,project,id,taskId.toString());
     }
 
     @Transactional
@@ -196,5 +226,12 @@ public class RepositoryService {
                 WHERE remote_id=? AND active=1
                 """,remoteId);
         jdbc.update("DELETE FROM project_github_repositories WHERE remote_id=? AND installation_id=?",remoteId,app.installation());
+        cancelOpenSourceSyncs(remoteId);
+    }
+
+    private void cancelOpenSourceSyncs(long remoteId) {
+        if (sourceSyncs == null) return;
+        SourceSyncService syncs = sourceSyncs.getIfAvailable();
+        if (syncs != null) syncs.revokeOpenByRepository(remoteId);
     }
 }
