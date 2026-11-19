@@ -14,6 +14,7 @@ type RepositoryAlias struct {
 type Registration struct {
 	Repositories    []RepositoryAlias `json:"repositories"`
 	Toolchains      []string          `json:"toolchains"`
+	Actions         []string          `json:"actions,omitempty"`
 	OS              string            `json:"os"`
 	Arch            string            `json:"arch"`
 	CPUs            int               `json:"cpus"`

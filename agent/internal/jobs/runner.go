@@ -51,6 +51,7 @@ type manifest struct {
 	Toolchains   []string     `json:"toolchains,omitempty"`
 	State        string       `json:"state_directory"`
 	RootFS       string       `json:"toolchain_root"`
+	SyncRoot     string       `json:"sync_root,omitempty"`
 	Timeout      int          `json:"timeout_seconds"`
 	Repositories []repository `json:"repositories"`
 }
@@ -153,6 +154,10 @@ func LoadRunner(path string, registration *Registration) (string, time.Duration,
 		registration.Toolchains = append([]string{}, cfg.Toolchains...)
 		for _, repo := range cfg.Repositories {
 			registration.Repositories = append(registration.Repositories, RepositoryAlias{Project: repo.Project, Name: repo.Name})
+		}
+		// 配置了同步根目录的节点声明 source.sync.v1；中控据此决定是否派发源码同步。
+		if cfg.SyncRoot != "" {
+			registration.Actions = []string{"source.sync.v1"}
 		}
 	}
 	return cfg.State, time.Duration(cfg.Timeout) * time.Second, run, nil
