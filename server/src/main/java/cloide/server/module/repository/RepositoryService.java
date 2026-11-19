@@ -109,6 +109,19 @@ public class RepositoryService {
                 """,BINDING,remoteId,project).stream().findFirst()
                 .orElseThrow(()->new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
     }
+
+    /** 由快照写入事务持锁至提交，使解绑与快照写入按同一行排序。 */
+    void lockActiveGeneration(long project, long remoteId, long generation) {
+        var matches = jdbc.queryForList("""
+                SELECT id FROM project_repository_bindings
+                WHERE remote_id = ? AND generation = ? AND project_id = ? AND active = 1
+                FOR UPDATE
+                """, Long.class, remoteId, generation, project);
+        if (matches.isEmpty()) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
+
     private Repository find(long project,long id,boolean lock) {
         return jdbc.query("SELECT * FROM project_github_repositories WHERE project_id=? AND remote_id=?"+(lock?" FOR UPDATE":""),
                 REPO,project,id).stream().findFirst().orElseThrow(()->new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
