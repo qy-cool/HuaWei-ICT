@@ -16,7 +16,27 @@
 
 ## 节点能力报告
 
-新版 Agent 在 ready 帧增加可选 capabilities。节点报告系统、架构、逻辑核数、账本所在卷的可用容量、主机可用内存以及经登记的仓库和工具链标签。容量是操作系统观测值。管理员可在清单加入 toolchains 字符串数组（例如 jdk21、maven39）；前端每分钟刷新，只展示当前用户项目的仓库别名。旧 Agent 可继续发送仅含 protocol_version 的 ready 帧。
+新版 Agent 在 ready 帧增加可选 capabilities。节点报告系统、架构、逻辑核数、账本所在卷的可用容量、主机可用内存以及经登记的仓库和工具链标签。容量是操作系统观测值。管理员可在清单加入 toolchains 字符串数组（例如 jdk21、maven39）；前端每分钟刷新，只展示当前用户项目的仓库别名。支持源码同步的 Agent 另在 capabilities 中报告 actions 数组（当前仅有 `source.sync.v1`）；中控只向声明该能力的节点派发同步，旧 Agent 不会收到 `source.sync.*` 帧。旧 Agent 可继续发送仅含 protocol_version 的 ready 帧。
+
+## 节点源码同步（source.sync.v1）
+
+在已认证的 `/ws/agent` 上独立的同步帧族，与 `job.execute` 分开协商：只有先发送过 `source.sync.ready` 的会话才会收到同步派发。空节点据此取回中控批准的提交快照，全程不接触 GitHub 凭据。
+
+| 帧 | 发送方 | payload / 行为 |
+|---|---|---|
+| `source.sync.ready` | Agent | `protocol_version: 1`。连接建立后协商，约每 5 秒轮询，触发中控重发当前同步或取消。 |
+| `source.sync` | 中控 | `sync_id` 为小写 UUID，`project_id`、`repository_id`、`snapshot_id`、`generation`、`commit_sha`、`tree_sha` 均为快照事实，`bundle_sha256`、`byte_count` 为待下载内容摘要，`deadline` 为 UTC RFC3339。重发保持原请求。 |
+| `source.sync.accepted` | Agent | `sync_id`。节点已把请求写入持久同步账本。 |
+| `source.sync.progress` | Agent | `sync_id, stage`（`transferring` 或 `verifying`），可带 `bytes_done`。非终态帧，丢失由后续帧或结果补齐。 |
+| `source.sync.cancel` | 中控 | `sync_id`。先于派发到达时写入取消记录，在下载或核验中到达时停止并清理本操作的临时对象。 |
+| `source.sync.result` | Agent | `sync_id, status, verified_commit_sha, verified_tree_sha, verified_bundle_sha256, output`。状态为 `ready`、`failed`、`cancelled` 或 `uncertain`。`ready` 必须携带与派发一致的三个摘要；`failed` 的 output 携带有界错误说明（如容量不足、摘要不符）。 |
+| `source.sync.result.ack` | 中控 | `sync_id`。中控须先保存终态再发确认。Agent 停止主动重发，保留记录供重复派发对账。 |
+
+**下载与授权。** 节点用自身节点凭据（`X-Agent-Token`，与制品上传相同）调用 `POST /api/source-agent/syncs/{syncId}/grant?serverId=…` 领取绑定该同步、该节点、绑定代次与有效期的短期授权，响应一次性返回授权 ID、43 位密钥及全部下载事实。之后以 `GET /api/source-agent/syncs/{syncId}/content` 下载 bundle，每次请求同时出示节点凭据与 `X-Sync-Grant: grantId.secret`，支持 `Range` 断点续传；授权过期或被撤时重新领取。中控每次下载请求重查撤权与期限，日志只记授权 ID、时间与结果，不落密钥。节点凭据与短期授权都不写入同步账本、安装目录或日志。
+
+**原子安装与重放。** 节点按 `(project_id, repository_id, snapshot_id)` 在管理员配置的同步根目录下分目录，在同一文件系统的临时目录完成 bundle 导入与对象核验，再原子更名为就绪目录；就绪目录保留一个私有 ref 指向该提交。相同 `sync_id` 且相同信封摘要（commit、tree、bundle、代次）的重复送达直接查账返回原结果；同 ID 换 SHA、目录或代次记录冲突并拒绝执行。局部失败仅清理该操作拥有的临时目录，就绪的旧快照不受影响。不同提交、同一仓库不同项目的对象分开存储。安装结果由 `(节点, 快照, 绑定代次)` 唯一确认。
+
+**账本与故障。** 同步账本与作业账本分开落盘，同样先写临时文件再原子改名。节点重启后发现已接单但没有持久终态的记录回报 `uncertain`。磁盘写入失败时不接新同步。中控在该同步截止时间加约 5 分钟宽限后仍未收到任何回执时落 `uncertain` 终态；节点回归后的真实回执仍可覆盖核实。
 
 ## 配置开发节点
 
@@ -26,6 +46,7 @@
 {
   "state_directory": "/var/lib/cloide/jobs",
   "toolchain_root": "/opt/cloide/toolchains/java-react",
+  "sync_root": "/var/lib/cloide/syncs",
   "timeout_seconds": 300,
   "repositories": [{
     "project_id": 1, "name": "orders",
@@ -34,6 +55,8 @@
   }]
 }
 ```
+
+`sync_root` 是源码同步的就绪对象根目录，按项目、仓库与快照分目录。**配置 `sync_root` 前必须先把节点 Agent 升级到识别该字段的版本**：旧版 Agent 的清单解析对未知字段严格失败，先改清单后升级会让节点启动失败。省略该字段时节点不上报 `source.sync.v1` 能力，中控拒绝把同步派发给该节点。
 
 本机安装 `bwrap` 和 `prlimit`。工具链根目录使用干净的离线 Linux 根文件系统，包含 `/bin/sh`、Git、测试所需二进制及动态库，预建 `/dev /proc /objects /tmp /work`。镜像、镜像文件权限、仓库镜像更新和测试命令由节点管理员维护。仓库按项目分别镜像，完全收齐 Git objects 和依赖。作业从登记仓库的只读对象目录在临时目录检出精确提交，仅把镜像、Git 对象和临时工作区暴露给测试进程。节点宿主与 Agent 环境变量不会传递给测试。
 
