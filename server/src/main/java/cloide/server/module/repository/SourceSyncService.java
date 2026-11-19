@@ -143,7 +143,8 @@ public class SourceSyncService {
             }
             String reason = e.getErrorCode() == ErrorCode.SOURCE_REF_NOT_FOUND ? "source_unavailable"
                     : e.getErrorCode() == ErrorCode.INVALID_REQUEST_PARAMETER ? "capacity"
-                    : e.getErrorCode() == ErrorCode.SOURCE_REQUEST_CONFLICT ? "digest_mismatch" : "internal";
+                    : e.getErrorCode() == ErrorCode.SOURCE_REQUEST_CONFLICT ? "digest_mismatch"
+                    : e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND ? "binding_revoked" : "internal";
             tx.executeWithoutResult(status -> store.complete(sync.syncId(), "failed", reason, now));
         }
     }
@@ -168,6 +169,10 @@ public class SourceSyncService {
             if (next.isEmpty()) return Optional.<Dispatch>empty();
             SourceSync sync = next.get();
             LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+            if (!bindingAllows(sync)) {
+                invalidateOpen(sync, "binding_revoked", now);
+                return Optional.of(new Dispatch("source.sync.cancel", Map.of("sync_id", sync.syncId())));
+            }
             if (sync.status().equals("cancelling") || sync.deadline().isBefore(now)) {
                 store.status(sync.syncId(), "cancelling", now);
                 return Optional.of(new Dispatch("source.sync.cancel", Map.of("sync_id", sync.syncId())));
@@ -217,6 +222,8 @@ public class SourceSyncService {
             return;
         }
         if (sync.terminal()) {
+            // 解绑后已 cancelled 的同步允许节点再报 cancelled，避免并发回执被误判冲突。
+            if ("cancelled".equals(sync.status()) && "cancelled".equals(status)) return;
             boolean same = sync.status().equals(status)
                     && Objects.equals(sync.commitSha(), commitSha) && Objects.equals(sync.treeSha(), treeSha)
                     && Objects.equals(sync.bundleSha256(), bundleSha256);
@@ -228,43 +235,102 @@ public class SourceSyncService {
                 LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
     }
 
+    /**
+     * 解绑或 GitHub 撤权后调用：该仓库所有未终态同步立即 cancelled，并清除短期授权。
+     * 可重入、可在绑定行已软删之后调用。
+     */
+    public void revokeOpenByRepository(long remoteId) {
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+        tx.executeWithoutResult(status -> {
+            store.cancelOpenByRepository(remoteId, now, "binding_revoked");
+            store.deleteGrantsByRepository(remoteId);
+        });
+    }
+
     /** 已认证节点领取短期下载授权：绑定同步、节点与有效期；密钥只此一次返回。 */
     public GrantView grant(long serverId, String syncId) {
-        SourceSync sync = store.lockForNode(serverId, checkedSyncId(syncId));
-        if (!SourceSync.GRANTABLE.contains(sync.status()) || sync.bundleSha256() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
-        }
-        String grantId = UUID.randomUUID().toString();
-        byte[] secretBytes = new byte[32];
-        random.nextBytes(secretBytes);
-        String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-        store.insertGrant(grantId, sync.syncId(), serverId, SourceIdentityService.digest(secret),
-                now.plus(GRANT_TTL), now);
-        return new GrantView(grantId, secret, now.plus(GRANT_TTL).toInstant(ZoneOffset.UTC).toString(),
-                sync.deadline().toInstant(ZoneOffset.UTC).toString(), sync.projectId(), sync.repositoryId(),
-                sync.snapshotId(), sync.generation(), sync.commitSha(), sync.treeSha(),
-                sync.bundleSha256(), sync.byteCount());
+        // 撤权取消必须先提交再抛冲突，避免 TransactionTemplate 回滚刚写入的 cancelled。
+        var outcome = new Object() { GrantView view; ErrorCode error; };
+        tx.executeWithoutResult(status -> {
+            String id = checkedSyncId(syncId);
+            SourceSync hinted = store.readForNode(serverId, id);
+            LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+            if (!bindingAllows(hinted)) {
+                invalidateOpen(store.lockForNode(serverId, id), "binding_revoked", now);
+                outcome.error = ErrorCode.RESOURCE_CONFLICT;
+                return;
+            }
+            SourceSync sync = store.lockForNode(serverId, id);
+            if (!SourceSync.GRANTABLE.contains(sync.status()) || sync.bundleSha256() == null) {
+                outcome.error = ErrorCode.RESOURCE_CONFLICT;
+                return;
+            }
+            String grantId = UUID.randomUUID().toString();
+            byte[] secretBytes = new byte[32];
+            random.nextBytes(secretBytes);
+            String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+            store.insertGrant(grantId, sync.syncId(), serverId, SourceIdentityService.digest(secret),
+                    now.plus(GRANT_TTL), now);
+            outcome.view = new GrantView(grantId, secret, now.plus(GRANT_TTL).toInstant(ZoneOffset.UTC).toString(),
+                    sync.deadline().toInstant(ZoneOffset.UTC).toString(), sync.projectId(), sync.repositoryId(),
+                    sync.snapshotId(), sync.generation(), sync.commitSha(), sync.treeSha(),
+                    sync.bundleSha256(), sync.byteCount());
+        });
+        if (outcome.error != null) throw new BusinessException(outcome.error);
+        return outcome.view;
     }
 
     /**
-     * 内容下载校验：每次请求重查节点凭据（Controller 已认证）、短期授权归属与期限、
-     * 以及同步状态是否仍允许下载；任一不满足即拒绝。过期授权即使密钥正确也不可用。
+     * 内容下载校验：每次请求在同一事务内先锁定绑定行再锁定同步行，重查节点凭据
+     * （Controller 已认证）、绑定是否仍活动且代次一致、短期授权归属与期限、以及
+     * 同步状态是否仍允许下载；任一不满足即拒绝。过期授权即使密钥正确也不可用。
      */
     public Path content(long serverId, String syncId, String grantId, String secret) {
         if (grantId == null || secret == null) throw new BusinessException(ErrorCode.UNAUTHORIZED);
-        var grant = store.lockGrantRow(grantId, serverId, checkedSyncId(syncId))
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
-        if (!constantTimeEquals(SourceIdentityService.digest(secret), grant.secretHash())
-                || !grant.expiresAt().isAfter(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        // 与 grant 相同：先提交取消再抛错，避免冲突回滚刚写入的 cancelled。
+        var outcome = new Object() { Path path; ErrorCode error; };
+        tx.executeWithoutResult(status -> {
+            String id = checkedSyncId(syncId);
+            SourceSync hinted = store.readForNode(serverId, id);
+            LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+            if (!bindingAllows(hinted)) {
+                invalidateOpen(store.lockForNode(serverId, id), "binding_revoked", now);
+                outcome.error = ErrorCode.RESOURCE_CONFLICT;
+                return;
+            }
+            var grant = store.lockGrantRow(grantId, serverId, id);
+            if (grant.isEmpty()
+                    || !constantTimeEquals(SourceIdentityService.digest(secret), grant.get().secretHash())
+                    || !grant.get().expiresAt().isAfter(now)) {
+                outcome.error = ErrorCode.UNAUTHORIZED;
+                return;
+            }
+            SourceSync sync = store.lockForNode(serverId, id);
+            if (!SourceSync.GRANTABLE.contains(sync.status()) || sync.bundleSha256() == null) {
+                // 撤销或终态后凭旧授权取得新分段被立即阻止。
+                outcome.error = ErrorCode.RESOURCE_CONFLICT;
+                return;
+            }
+            outcome.path = bundleStore.open(sync.bundleSha256());
+        });
+        if (outcome.error != null) throw new BusinessException(outcome.error);
+        return outcome.path;
+    }
+
+    private boolean bindingAllows(SourceSync sync) {
+        try {
+            repositories.lockActiveGeneration(sync.projectId(), sync.repositoryId(), sync.generation());
+            return true;
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.RESOURCE_NOT_FOUND) return false;
+            throw e;
         }
-        SourceSync sync = store.lockForNode(serverId, checkedSyncId(syncId));
-        if (!SourceSync.GRANTABLE.contains(sync.status()) || sync.bundleSha256() == null) {
-            // 撤销或终态后凭旧授权取得新分段被立即阻止。
-            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
-        }
-        return bundleStore.open(sync.bundleSha256());
+    }
+
+    private void invalidateOpen(SourceSync sync, String reason, LocalDateTime now) {
+        if (sync.terminal()) return;
+        store.deleteGrantsForSync(sync.syncId());
+        store.complete(sync.syncId(), "cancelled", reason, now);
     }
 
     /** bundle 就绪后唤醒目标节点；发送失败不影响状态机，节点 ready 轮询会重取。 */

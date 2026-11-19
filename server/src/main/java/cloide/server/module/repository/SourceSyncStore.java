@@ -55,6 +55,11 @@ class SourceSyncStore {
         return required(jdbc.query(COLUMNS + " WHERE server_id = ? AND sync_id = ? FOR UPDATE", ROW, serverId, syncId));
     }
 
+    /** 不持锁读取目标节点上的同步，供授权/下载先锁定绑定行再锁定同步行。 */
+    SourceSync readForNode(long serverId, String syncId) {
+        return required(jdbc.query(COLUMNS + " WHERE server_id = ? AND sync_id = ?", ROW, serverId, syncId));
+    }
+
     /** 中控待准备队列：最旧的 queued 优先，锁行防止两个调度实例重复生成。 */
     Optional<SourceSync> lockNextQueued() {
         return jdbc.query(COLUMNS + " WHERE status = 'queued' ORDER BY id LIMIT 1 FOR UPDATE", ROW)
@@ -135,6 +140,27 @@ class SourceSyncStore {
                 WHERE grant_id = ? AND server_id = ? AND sync_id = ? FOR UPDATE
                 """,(rs,i)->new GrantRow(rs.getString(1),rs.getObject(2,LocalDateTime.class)),
                 grantId, serverId, syncId).stream().findFirst();
+    }
+
+    /**
+     * 解绑/撤权：把该仓库尚未终态的同步一律置 cancelled，可重入（已终态行不受影响）。
+     */
+    void cancelOpenByRepository(long remoteId, LocalDateTime now, String reason) {
+        jdbc.update("""
+                UPDATE source_syncs SET status = 'cancelled', last_error = ?, updated_at = ?
+                WHERE repository_id = ? AND status IN ('queued','preparing','transferring','verifying','cancelling')
+                """, reason, now, remoteId);
+    }
+
+    void deleteGrantsByRepository(long remoteId) {
+        jdbc.update("""
+                DELETE FROM source_sync_grants WHERE sync_id IN (
+                    SELECT sync_id FROM source_syncs WHERE repository_id = ?)
+                """, remoteId);
+    }
+
+    void deleteGrantsForSync(String syncId) {
+        jdbc.update("DELETE FROM source_sync_grants WHERE sync_id = ?", syncId);
     }
 
     private static SourceSync required(List<SourceSync> rows) {

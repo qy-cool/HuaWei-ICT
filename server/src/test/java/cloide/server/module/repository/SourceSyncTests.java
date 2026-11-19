@@ -39,7 +39,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * A2 节点源码同步：H2 + 回环 GitHub 夹具 + 真实本地 Git 对象库，覆盖创建幂等与
  * 能力校验、受管 bundle 生成与摘要可核验、派发信封、终态裁决、短期授权、
- * source_unavailable 与超时兜底。
+ * source_unavailable、超时兜底，以及解绑/撤权后同步与授权立即失效。
  */
 class SourceSyncTests {
     @TempDir Path temp;
@@ -93,6 +93,10 @@ class SourceSyncTests {
         bundles=new SourceBundleService(app,bundleStore,temp.resolve("source").toUri());
         service=new SourceSyncService(new SourceSyncStore(jdbc),identity,repositories,bundles,bundleStore,
                 capabilities,access,tx,Clock.systemUTC(),channel);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SourceSyncService> syncs=mock(ObjectProvider.class);
+        when(syncs.getIfAvailable()).thenAnswer(inv->service);
+        repositories.attachSourceSyncs(syncs);
         when(access.principal()).thenReturn(new AuthenticatedUser(5L,"operator","admin","approved",null,null));
         when(capabilities.supportsAction(1,2,"source.sync.v1")).thenReturn(true);
         link(1,8,"acme","orders","main");
@@ -301,5 +305,69 @@ class SourceSyncTests {
         service.prepareNext();
         assertThrows(BusinessException.class,()->service.progress(2,view.syncId(),"downloading"));
         assertThrows(BusinessException.class,()->service.progress(9,view.syncId(),"verifying"));
+    }
+
+    @Test void unlinkCancelsInFlightSyncAndInvalidatesGrant() {
+        var view=createSync();
+        service.prepareNext();
+        var grant=service.grant(2,view.syncId());
+        assertTrue(Files.isRegularFile(service.content(2,view.syncId(),grant.grantId(),grant.secret())));
+        // 管理侧解绑：进行中的同步立即 cancelled，已发授权不可再取分段，派发队列清空。
+        repositories.unlink(1,8);
+        var cancelled=service.read(1,view.syncId());
+        assertEquals("cancelled",cancelled.state());
+        assertEquals("binding_revoked",cancelled.lastError());
+        var grantError=assertThrows(BusinessException.class,()->service.grant(2,view.syncId()));
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,grantError.getErrorCode());
+        var contentError=assertThrows(BusinessException.class,
+                ()->service.content(2,view.syncId(),grant.grantId(),grant.secret()));
+        // 每次下载先复核绑定：解绑后按冲突拒绝（授权行亦已清除）。
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,contentError.getErrorCode());
+        assertTrue(service.next(2).isEmpty());
+        // 撤权可重入；节点再报 cancelled 收敛，ready 回执按冲突拒绝。
+        service.revokeOpenByRepository(8);
+        assertEquals("cancelled",service.read(1,view.syncId()).state());
+        service.finish(2,view.syncId(),"cancelled",commitSha,treeSha,grant.bundleSha256(),"stopped");
+        assertEquals("cancelled",service.read(1,view.syncId()).state());
+        var ready=assertThrows(BusinessException.class,
+                ()->service.finish(2,view.syncId(),"ready",commitSha,treeSha,grant.bundleSha256(),"installed"));
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,ready.getErrorCode());
+    }
+
+    @Test void contentAndGrantRecheckBindingEachRequestEvenWithoutCancelHook() {
+        var view=createSync();
+        service.prepareNext();
+        var grant=service.grant(2,view.syncId());
+        // 只软删绑定、不走解绑取消：content/grant 每次仍须重查并自行取消。
+        jdbc.update("UPDATE project_repository_bindings SET active=NULL,unlinked_at=CURRENT_TIMESTAMP(6),unlinked_by=0 WHERE remote_id=8 AND active=1");
+        var contentError=assertThrows(BusinessException.class,
+                ()->service.content(2,view.syncId(),grant.grantId(),grant.secret()));
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,contentError.getErrorCode());
+        assertEquals("cancelled",service.read(1,view.syncId()).state());
+        assertEquals("binding_revoked",service.read(1,view.syncId()).lastError());
+        var grantError=assertThrows(BusinessException.class,()->service.grant(2,view.syncId()));
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,grantError.getErrorCode());
+    }
+
+    @Test void contentAndGrantRejectGenerationMismatch() {
+        var view=createSync();
+        service.prepareNext();
+        var grant=service.grant(2,view.syncId());
+        jdbc.update("UPDATE project_repository_bindings SET generation=generation+1 WHERE remote_id=8 AND active=1");
+        var contentError=assertThrows(BusinessException.class,
+                ()->service.content(2,view.syncId(),grant.grantId(),grant.secret()));
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,contentError.getErrorCode());
+        var grantError=assertThrows(BusinessException.class,()->service.grant(2,view.syncId()));
+        assertEquals(ErrorCode.RESOURCE_CONFLICT,grantError.getErrorCode());
+        assertEquals("cancelled",service.read(1,view.syncId()).state());
+        assertEquals("binding_revoked",service.read(1,view.syncId()).lastError());
+    }
+
+    @Test void revokeCancelsQueuedSyncBeforePrepare() {
+        var view=createSync();
+        service.revokeOpenByRepository(8);
+        service.prepareNext();
+        assertEquals("cancelled",service.read(1,view.syncId()).state());
+        assertEquals("binding_revoked",service.read(1,view.syncId()).lastError());
     }
 }
