@@ -97,25 +97,7 @@ func main() {
 			syncManager.Start()
 		}
 	}
-	// 集中消息路由：terminal.* 与 command.* 各自独立子协议，未知类型仅记调试日志。
-	client.SetMessageHandler(func(ctx context.Context, message wsclient.AgentMessage) {
-		switch {
-		case strings.HasPrefix(message.Type, "terminal."):
-			terminalAgent.handle(ctx, message)
-		case strings.HasPrefix(message.Type, "command."):
-			commandAgent.handle(ctx, message)
-		case strings.HasPrefix(message.Type, "job.") && jobManager != nil:
-			if err := handleRepositoryJob(jobManager, message); err != nil {
-				logger.Warn("job frame rejected", "type", message.Type, "error", err)
-			}
-		case strings.HasPrefix(message.Type, "source.sync.") && syncManager != nil:
-			if err := handleSourceSync(syncManager, message); err != nil {
-				logger.Warn("source sync frame rejected", "type", message.Type, "error", err)
-			}
-		default:
-			logger.Debug("unsupported agent message", "type", message.Type)
-		}
-	})
+	client.SetMessageHandler(nodeMessageHandler(terminalAgent, commandAgent, jobManager, syncManager, logger))
 	client.SetMetricsAckHandler(metricsReporter.HandleMetricsAck)
 	client.SetMetricsNackHandler(metricsReporter.HandleMetricsNack)
 	client.SetHeartbeatStatsProvider(func() wsclient.HeartbeatPayload {
@@ -127,6 +109,9 @@ func main() {
 		metricsReporter.HandleAuthenticated()
 		if jobManager != nil {
 			jobManager.Wake()
+		}
+		if syncManager != nil {
+			syncManager.Wake()
 		}
 	})
 	client.SetDisconnectHandler(func() {
@@ -143,6 +128,9 @@ func main() {
 		metricsCollector.SetExtendedSampler(collector.NewExtendedSampler())
 	}
 	err = runWithDependencies(ctx, cfg, logger, client, metricsCollector, metricsReporter)
+	if syncManager != nil {
+		syncManager.Close()
+	}
 	if jobManager != nil {
 		jobManager.Close()
 	}
@@ -152,6 +140,27 @@ func main() {
 	}
 	terminalAgent.manager.CloseAll("agent_shutdown")
 	logger.Info("agent shutdown complete")
+}
+
+func nodeMessageHandler(terminal *terminalAgent, command *commandAgent, jobManager *jobs.Manager, syncManager *syncs.Manager, logger *slog.Logger) func(context.Context, wsclient.AgentMessage) {
+	return func(ctx context.Context, message wsclient.AgentMessage) {
+		switch {
+		case strings.HasPrefix(message.Type, "terminal."):
+			terminal.handle(ctx, message)
+		case strings.HasPrefix(message.Type, "command."):
+			command.handle(ctx, message)
+		case strings.HasPrefix(message.Type, "job.") && jobManager != nil:
+			if err := handleRepositoryJob(jobManager, message); err != nil {
+				logger.Warn("job frame rejected", "type", message.Type, "error", err)
+			}
+		case syncManager != nil && (message.Type == "source.sync" || strings.HasPrefix(message.Type, "source.sync.")):
+			if err := handleSourceSync(syncManager, message); err != nil {
+				logger.Warn("source sync frame rejected", "type", message.Type, "error", err)
+			}
+		default:
+			logger.Debug("unsupported agent message", "type", message.Type)
+		}
+	}
 }
 
 // newReporterOptions converts validated Agent configuration into the single

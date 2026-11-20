@@ -85,8 +85,11 @@ func LoadRunner(path string, registration *Registration) (string, time.Duration,
 			return "", 0, nil, errors.New("invalid toolchain label")
 		}
 	}
-	if !cleanAbs(cfg.State) || !cleanAbs(cfg.RootFS) || cfg.Timeout < 1 || cfg.Timeout > 1800 || len(cfg.Repositories) == 0 {
-		return "", 0, nil, errors.New("invalid job ledger, toolchain root, timeout or empty repository list")
+	if !cleanAbs(cfg.State) || !cleanAbs(cfg.RootFS) || cfg.Timeout < 1 || cfg.Timeout > 1800 {
+		return "", 0, nil, errors.New("invalid job ledger, toolchain root or timeout")
+	}
+	if len(cfg.Repositories) == 0 && !cleanAbs(cfg.SyncRoot) {
+		return "", 0, nil, errors.New("empty repository list requires a clean absolute sync_root")
 	}
 	resolveDir := func(p string) (string, error) {
 		real, err := filepath.EvalSymlinks(p)
@@ -152,6 +155,9 @@ func LoadRunner(path string, registration *Registration) (string, time.Duration,
 	}
 	if registration != nil {
 		registration.Toolchains = append([]string{}, cfg.Toolchains...)
+		if registration.Repositories == nil {
+			registration.Repositories = []RepositoryAlias{}
+		}
 		for _, repo := range cfg.Repositories {
 			registration.Repositories = append(registration.Repositories, RepositoryAlias{Project: repo.Project, Name: repo.Name})
 		}
