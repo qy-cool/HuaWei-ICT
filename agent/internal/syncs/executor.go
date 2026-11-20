@@ -244,11 +244,12 @@ func verifyBundle(ctx context.Context, staging string, req Request) (string, str
 		privateRef+":"+privateRef); err != nil {
 		return "", "", fmt.Errorf("git fetch from bundle: %v: %s", err, out)
 	}
-	commit, err := runGit(ctx, repo, "rev-parse", "--verify", req.Commit+"^{commit}")
+	// The expected commit can exist as an ancestor even when the snapshot ref points elsewhere.
+	commit, err := runGit(ctx, repo, "rev-parse", "--verify", privateRef+"^{commit}")
 	if err != nil {
 		return "", "", fmt.Errorf("commit missing from bundle: %v", err)
 	}
-	tree, err := runGit(ctx, repo, "rev-parse", "--verify", req.Commit+"^{tree}")
+	tree, err := runGit(ctx, repo, "rev-parse", "--verify", commit+"^{tree}")
 	if err != nil {
 		return "", "", fmt.Errorf("tree missing from bundle: %v", err)
 	}
