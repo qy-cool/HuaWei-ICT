@@ -1,9 +1,11 @@
 package cloide.server.module.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -12,10 +14,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 在显式隔离 MySQL 库中验证 V51 仓库身份四表的 DDL 与关键唯一键行为。
@@ -34,6 +40,12 @@ class RepositorySourceIdentityMySqlValidationIT {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private RepositoryService repositoryService;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @AfterEach
     void tearDown() {
@@ -89,6 +101,34 @@ class RepositorySourceIdentityMySqlValidationIT {
         insertBinding(1, "2026-11-16 01:00:00");
         revokeActiveBinding();
         assertThrows(DuplicateKeyException.class, () -> insertBinding(1, "2026-11-16 01:00:01"));
+    }
+
+    @Test
+    void snapshotBindingLockBlocksConcurrentRevocationUntilCommit() {
+        insertBinding(1, "2026-11-16 02:00:00");
+        var snapshotTransaction = new TransactionTemplate(transactionManager);
+        snapshotTransaction.setTimeout(5);
+        var revocationTransaction = new TransactionTemplate(transactionManager);
+        revocationTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        revocationTransaction.setTimeout(5);
+        String acquireRevocationLock = """
+                SELECT generation FROM project_repository_bindings
+                WHERE remote_id = ? AND active = 1
+                FOR UPDATE NOWAIT
+                """;
+
+        snapshotTransaction.executeWithoutResult(status -> {
+            repositoryService.lockActiveGeneration(REMOTE_ID, REMOTE_ID, 1);
+            // 保持快照事务打开，由另一连接尝试获取撤销所需的同一行锁。
+            var error = assertThrows(DataAccessException.class, () -> revocationTransaction.execute(inner ->
+                    jdbcTemplate.queryForObject(acquireRevocationLock, Long.class, REMOTE_ID)));
+            var sqlError = assertInstanceOf(SQLException.class, error.getMostSpecificCause());
+            assertEquals(3572, sqlError.getErrorCode());
+        });
+
+        Long generationAfterCommit = revocationTransaction.execute(status ->
+                jdbcTemplate.queryForObject(acquireRevocationLock, Long.class, REMOTE_ID));
+        assertEquals(1L, generationAfterCommit);
     }
 
     /** 幂等请求账本 (project, requester, operation, request_id) 唯一键：同键重复被拒绝。 */

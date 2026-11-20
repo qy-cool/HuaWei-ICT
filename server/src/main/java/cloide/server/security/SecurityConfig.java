@@ -108,6 +108,10 @@ public class SecurityConfig {
                         // 控制器对每次拉取、下载、回执独立校验节点 Token 和项目分配。
                         .requestMatchers(HttpMethod.GET, "/api/release-agent/next", "/api/release-agent/*/content").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/release-agent/*/receipt").permitAll()
+                        // A2 源码同步：控制器对每次授权领取与内容下载独立校验节点 Token、
+                        // 短期授权归属与期限。
+                        .requestMatchers(HttpMethod.POST, "/api/source-agent/syncs/*/grant").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/source-agent/syncs/*/content").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/coding-agent/poll", "/api/coding-agent/events").permitAll()
                         // 两个内网网关接口独立校验部署密钥及目标工作区；浏览器 JWT 仅在管理台使用。
                         .requestMatchers(HttpMethod.POST, "/api/workspace-gateway/session").permitAll()

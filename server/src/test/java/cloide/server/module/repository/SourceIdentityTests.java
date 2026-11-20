@@ -29,9 +29,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 class SourceIdentityTests {
     @TempDir Path temp;
     private static final String X="a".repeat(40), Y="b".repeat(40), TREE_X="c".repeat(40), TREE_Y="d".repeat(40);
+    private static final String R="e".repeat(40), TREE_R="f".repeat(40);
     private final ObjectMapper json=new ObjectMapper();
     private final ProjectAccess access=mock(ProjectAccess.class);
     private final AtomicReference<Throwable> failure=new AtomicReference<>();
+    private final AtomicReference<Runnable> beforeTreeResponse=new AtomicReference<>();
     private JdbcTemplate jdbc;
     private HttpServer server;
     private GitHubApp app;
@@ -41,6 +43,8 @@ class SourceIdentityTests {
     private volatile String mainSha=X;
     /** 夹具控制的树 SHA：与 mainSha 联动。 */
     private volatile String mainTree=TREE_X;
+    /** 夹具开关：置 true 后单 ref 端点对 main 返回 404，模拟远端分支已删除。 */
+    private volatile boolean mainMissing;
     /** 批量 heads 端点命中计数：断言 refs 列表单次调用只发一次请求。 */
     private int batchRefCalls;
 
@@ -102,11 +106,23 @@ class SourceIdentityTests {
                 batchRefCalls++;
                 reply(e,200,List.of(Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha)))); return;
             }
+            if(p.equals("/repos/acme/orders/git/matching-refs/heads/release/1.2")) {
+                // 含斜杠分支：matching-refs 按前缀返回多条，掺入干扰项验证完整 ref 精确匹配。
+                reply(e,200,List.of(
+                        Map.of("ref","refs/heads/release/1.2","object",Map.of("sha",R)),
+                        Map.of("ref","refs/heads/release/1.2.3","object",Map.of("sha","9".repeat(40))))); return;
+            }
             if(p.equals("/repos/acme/orders/git/ref/heads/main")) {
+                if (mainMissing) { reply(e,404,Map.of("message","Not Found")); return; }
                 reply(e,200,Map.of("ref","refs/heads/main","object",Map.of("sha",mainSha))); return;
             }
-            if(p.equals("/repos/acme/orders/git/commits/"+X)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_X))); return; }
+            if(p.equals("/repos/acme/orders/git/commits/"+X)) {
+                Runnable callback=beforeTreeResponse.getAndSet(null);
+                if(callback!=null) callback.run();
+                reply(e,200,Map.of("tree",Map.of("sha",TREE_X))); return;
+            }
             if(p.equals("/repos/acme/orders/git/commits/"+Y)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_Y))); return; }
+            if(p.equals("/repos/acme/orders/git/commits/"+R)) { reply(e,200,Map.of("tree",Map.of("sha",TREE_R))); return; }
             fail("unexpected route "+p);
         } catch(Throwable err) {
             failure.set(err); try {reply(e,500,Map.of());} catch(Exception ignored) {}
@@ -152,6 +168,42 @@ class SourceIdentityTests {
         assertThrows(BusinessException.class,()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/develop",null));
         assertThrows(BusinessException.class,()->service.snapshot(1,8,UUID.randomUUID(),"main",null));
         assertThrows(BusinessException.class,()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/ma*",null));
+    }
+
+    @Test void snapshotOnDeletedBranchMapsToSourceRefNotFound() {
+        // 契约 40405：允许清单内的分支在远端已被删除（单 ref 端点 404）→ 404 语义，
+        // 而非落入 SHA 格式校验的 409 RESOURCE_CONFLICT。
+        mainMissing=true;
+        var error=assertThrows(BusinessException.class,
+                ()->service.snapshot(1,8,UUID.randomUUID(),"refs/heads/main",null));
+        assertEquals(ErrorCode.SOURCE_REF_NOT_FOUND,error.getErrorCode());
+    }
+
+    @Test void slashBranchSnapshotResolvesViaMatchingRefs() {
+        // 含斜杠分支走 matching-refs 集合端点并按完整 ref 精确匹配，干扰项（release/1.2.3）不命中。
+        service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/release/1.2"));
+        var snapshot=service.snapshot(1,8,UUID.randomUUID(),"refs/heads/release/1.2",null);
+        assertEquals(R,snapshot.commitSha());
+        assertEquals(TREE_R,snapshot.treeSha());
+    }
+
+    @Test void refsReportNullShaForDeletedRemoteBranch() {
+        // 允许清单内的分支在远端已删除：refs 列表以 null SHA 表达，列表不因此失败。
+        service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/main","refs/heads/gone"));
+        var page=service.refs(1,8,null,50);
+        assertEquals(2,page.items().size());
+        assertNull(page.items().stream().filter(i->i.ref().equals("refs/heads/gone")).findFirst().orElseThrow().commitSha());
+    }
+
+    @Test void refsPaginationRoundTripsCursor() {
+        // 分页往返：nextCursor 定位下一页并最终终止（null）。
+        service.updatePolicy(1,8,UUID.randomUUID(),0,List.of("refs/heads/main","refs/heads/release/1.2"));
+        var first=service.refs(1,8,null,1);
+        assertEquals("refs/heads/main",first.items().getFirst().ref());
+        assertNotNull(first.nextCursor());
+        var second=service.refs(1,8,first.nextCursor(),1);
+        assertEquals("refs/heads/release/1.2",second.items().getFirst().ref());
+        assertNull(second.nextCursor());
     }
 
     @Test void policyUpdatesAreOptimisticAndVersioned() {
@@ -200,6 +252,28 @@ class SourceIdentityTests {
         assertFalse(stillOld.bindingActive());
     }
 
+    @Test void rebindWhileResolvingTreeDiscardsSnapshotAndAllowsRetry() {
+        UUID requestId=UUID.randomUUID();
+        // 分支已解析，在提交树返回前由另一个连接撤销并重绑。
+        beforeTreeResponse.set(()->{
+            repositories.unlink(1,8);
+            link(1,8,"acme","orders","main");
+        });
+
+        var error=assertThrows(BusinessException.class,
+                ()->service.snapshot(1,8,requestId,"refs/heads/main",X));
+        assertEquals(ErrorCode.RESOURCE_NOT_FOUND,error.getErrorCode());
+        assertEquals(0L,jdbc.queryForObject("SELECT COUNT(*) FROM source_snapshots",Long.class));
+        assertEquals(0L,jdbc.queryForObject("SELECT COUNT(*) FROM repository_idempotent_requests",Long.class));
+
+        var retried=service.snapshot(1,8,requestId,"refs/heads/main",X);
+        assertEquals(2,retried.bindingGeneration());
+        assertTrue(retried.bindingActive());
+        assertEquals(retried,service.snapshot(1,8,requestId,"refs/heads/main",X));
+        assertEquals(1L,jdbc.queryForObject("SELECT COUNT(*) FROM source_snapshots",Long.class));
+        assertEquals(1L,jdbc.queryForObject("SELECT COUNT(*) FROM repository_idempotent_requests",Long.class));
+    }
+
     @Test void sameRemoteIdCannotServeTwoProjects() {
         // V44 约束保留：remote_id 全局唯一绑定一个项目；项目 2 视角下仓库 8 不存在。
         assertThrows(BusinessException.class,()->repositories.activeBinding(2,8));
@@ -223,6 +297,23 @@ class SourceIdentityTests {
         assertEquals(ErrorCode.SOURCE_REQUEST_CONFLICT,error.getErrorCode());
     }
 
+    @Test void idempotentForUpdateResolvesCommittedLedgerRow() {
+        // DuplicateKeyException 收敛路径的锁定读（FOR UPDATE 当前读）：直测命中、异参与缺失三种形态；
+        // REPEATABLE READ 读视图导致的陈旧读仅真实 MySQL 可复现，H2 下验证 SQL 形态与 digest 语义。
+        String digestA="a".repeat(64), digestB="b".repeat(64);
+        UUID requestId=UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO repository_idempotent_requests(project_id,requester_id,operation,request_id,param_digest,result_id)
+                VALUES (1,5,'snapshot',?,?,'11111111-1111-1111-1111-111111111111')
+                """,requestId.toString(),digestA);
+        assertEquals("11111111-1111-1111-1111-111111111111",
+                service.idempotentResultForUpdate(1,"snapshot",requestId,digestA));
+        var conflict=assertThrows(BusinessException.class,
+                ()->service.idempotentResultForUpdate(1,"snapshot",requestId,digestB));
+        assertEquals(ErrorCode.SOURCE_REQUEST_CONFLICT,conflict.getErrorCode());
+        assertNull(service.idempotentResultForUpdate(1,"snapshot",UUID.randomUUID(),digestA));
+    }
+
     @Test void refsRejectsMalformedCursor() {
         var error=assertThrows(BusinessException.class,()->service.refs(1,8,"!!!",50));
         assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error.getErrorCode());
@@ -231,6 +322,11 @@ class SourceIdentityTests {
                 .encodeToString("99999999999999999999".getBytes(StandardCharsets.UTF_8));
         var error2=assertThrows(BusinessException.class,()->service.refs(1,8,overflow,50));
         assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error2.getErrorCode());
+        // 解码为负数 offset：同样按 400 拒绝，不落到 IndexOutOfBoundsException 的 500。
+        String negative=Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("-1".getBytes(StandardCharsets.UTF_8));
+        var error3=assertThrows(BusinessException.class,()->service.refs(1,8,negative,50));
+        assertEquals(ErrorCode.INVALID_REQUEST_PARAMETER,error3.getErrorCode());
     }
 
     @Test void connectOnExistingActiveBindingIsIdempotent() {

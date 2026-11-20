@@ -142,4 +142,48 @@ class GitHubIntegrationTests {
         assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM github_deliveries",Integer.class));
         assertEquals("merged",service.pulls(1,8).getFirst().prState());
     }
+
+    @Test void webhookRevocationsSoftDeleteGenerationsAndActiveRows() throws Exception {
+        service.connect(1,"orders",null);
+        service.connect(1,"new",UUID.randomUUID());
+        // 预置第 1 代次的历史快照：撤销后快照保留审计。
+        jdbc.update("""
+                INSERT INTO source_snapshots(snapshot_id,project_id,remote_id,ref,commit_sha,tree_sha,binding_generation,policy_version,resolved_at,created_by)
+                VALUES ('11111111-1111-1111-1111-111111111118',1,8,'refs/heads/main',?,?,?,?,CURRENT_TIMESTAMP(6),5)
+                """,BASE,TREE,1,0);
+        revoke("installation_repositories",Map.of("action","removed","repositories_removed",List.of(Map.of("id",8))));
+        // 仓库移除：仅该仓库软删（active=NULL、unlinked_by=0 系统撤销、活动行删除），其他绑定不受影响。
+        assertNull(latestActive(8));
+        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM project_github_repositories WHERE remote_id=8",Integer.class));
+        assertEquals(1,latestActive(9));
+        revoke("installation",Map.of("action","deleted"));
+        // 安装删除：剩余绑定全部软删。
+        assertNull(latestActive(9));
+        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM project_github_repositories WHERE remote_id=9",Integer.class));
+        // 代次历史与快照审计保留。
+        assertEquals(1,jdbc.queryForObject(
+                "SELECT COUNT(*) FROM project_repository_bindings WHERE remote_id=8 AND generation=1 AND active IS NULL AND unlinked_by=0",Integer.class));
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM source_snapshots WHERE remote_id=8",Integer.class));
+        // 重绑产生第 2 代次后，仓库删除事件同样软删。
+        service.connect(1,"orders",null);
+        assertEquals(1,latestActive(8));
+        revoke("repository",Map.of("action","deleted","repository",Map.of("id",8)));
+        assertNull(latestActive(8));
+        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM project_github_repositories WHERE remote_id=8",Integer.class));
+        assertEquals(2,jdbc.queryForObject("SELECT MAX(generation) FROM project_repository_bindings WHERE remote_id=8",Long.class));
+    }
+
+    /** 以正确签名投递一次 webhook 撤销事件（installation 固定为夹具 17）。 */
+    private void revoke(String type,Map<String,Object> event) throws Exception {
+        var payload=new HashMap<String,Object>(event);
+        payload.put("installation",Map.of("id",17));
+        byte[] bytes=json.writeValueAsBytes(payload);
+        Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec("fixture-secret".getBytes(),"HmacSHA256"));
+        String sig="sha256="+HexFormat.of().formatHex(mac.doFinal(bytes));
+        service.webhook(UUID.randomUUID(),type,sig,bytes);
+    }
+    /** 最新代次的活动标记：软删后为 NULL。 */
+    private Object latestActive(long remoteId) {
+        return jdbc.queryForObject("SELECT active FROM project_repository_bindings WHERE remote_id=? ORDER BY generation DESC LIMIT 1",Object.class,remoteId);
+    }
 }

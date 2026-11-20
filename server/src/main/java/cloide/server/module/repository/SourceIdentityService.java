@@ -85,7 +85,9 @@ public class SourceIdentityService {
             jdbc.update("INSERT INTO repository_source_policies(remote_id,policy_version,allowed_refs,updated_by) VALUES (?,?,?,?)",
                     remoteId,next,encode(normalized),access.principal().id());
         } catch (DuplicateKeyException e) {
-            // 并发竞争：另一请求已抢先写入同版本，按幂等键冲突反馈而非内部错误。
+            // 并发同键先按锁定读收敛（同参重放返回原版本）；赢家是其他 requestId 的版本竞争才按 40908 反馈。
+            String winner=idempotentResultForUpdate(project,operation,requestId,digest);
+            if (winner!=null) return policyAt(remoteId,Long.parseLong(winner));
             throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT,e);
         }
         recordIdempotent(project,operation,requestId,digest,String.valueOf(next));
@@ -142,7 +144,7 @@ public class SourceIdentityService {
     private String persist(long project,long remoteId,String operation,UUID requestId,String digest,
             String ref,String commitSha,String treeSha,long generation,long policyVersion) {
         return tx.execute(status->{
-            repositories.activeBinding(project,remoteId);
+            repositories.lockActiveGeneration(project, remoteId, generation);
             String snapshotId=UUID.randomUUID().toString();
             // 显式写入 UTC 墙上时间，不依赖 DDL 默认值（默认走会话时区，与列注释“UTC 解析时间”不符）。
             jdbc.update("""
@@ -158,7 +160,9 @@ public class SourceIdentityService {
             } catch (DuplicateKeyException e) {
                 // 并发同键：另一方已持久化唯一结果，本方丢弃刚插入的快照行改用既有结果。
                 jdbc.update("DELETE FROM source_snapshots WHERE snapshot_id=?",snapshotId);
-                String existing=idempotentResult(project,operation,requestId,digest);
+                // 复核必须用锁定读：普通 SELECT 沿用本事务开头 activeBinding 固定的
+                // REPEATABLE READ 读视图，看不到赢家刚提交的账本行，同参重放会被误判为 40908。
+                String existing=idempotentResultForUpdate(project,operation,requestId,digest);
                 if (existing!=null) return existing;
                 throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT,e);
             }
@@ -201,27 +205,43 @@ public class SourceIdentityService {
         return new Policy(remoteId,version,rows.getFirst());
     }
 
-    /** 游标为本服务签发的不透明 base64url(offset)；非本服务格式一律按参数错误拒绝。 */
+    /** 游标为本服务签发的不透明 base64url(offset)；非本服务格式（含负数偏移）一律按参数错误拒绝。 */
     private static int decodeCursor(String cursor) {
         try {
-            return Math.toIntExact(Long.parseLong(new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8)));
+            int offset=Math.toIntExact(Long.parseLong(new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8)));
+            if (offset<0) throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
+            return offset;
         } catch (IllegalArgumentException | ArithmeticException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_PARAMETER);
         }
     }
 
-    /** 幂等账本查询：同键同参返回原结果 ID；同键异参判定冲突。 */
-    private String idempotentResult(long project,String operation,UUID requestId,String digest) {
-        var rows=jdbc.queryForList("""
+    /** 幂等账本查询：同键同参返回原结果 ID；同键异参判定冲突。A2 源码同步（同包）复用同一账本与语义。 */
+    String idempotentResult(long project,String operation,UUID requestId,String digest) {
+        return resolve(jdbc.queryForList("""
                 SELECT param_digest,result_id FROM repository_idempotent_requests
                 WHERE project_id=? AND requester_id=? AND operation=? AND request_id=?
-                """,project,access.principal().id(),operation,requestId.toString());
+                """,project,access.principal().id(),operation,requestId.toString()),digest);
+    }
+
+    /**
+     * 幂等账本的当前读复核：FOR UPDATE 锁定读不沿用本事务的 REPEATABLE READ 一致性读视图，
+     * 能看到并发赢家在唯一键冲突解除前刚提交的账本行，供 DuplicateKeyException 后收敛。
+     */
+    String idempotentResultForUpdate(long project,String operation,UUID requestId,String digest) {
+        return resolve(jdbc.queryForList("""
+                SELECT param_digest,result_id FROM repository_idempotent_requests
+                WHERE project_id=? AND requester_id=? AND operation=? AND request_id=? FOR UPDATE
+                """,project,access.principal().id(),operation,requestId.toString()),digest);
+    }
+
+    private static String resolve(List<Map<String,Object>> rows,String digest) {
         if (rows.isEmpty()) return null;
         if (!digest.equals(rows.getFirst().get("param_digest"))) throw new BusinessException(ErrorCode.SOURCE_REQUEST_CONFLICT);
         return String.valueOf(rows.getFirst().get("result_id"));
     }
 
-    private void recordIdempotent(long project,String operation,UUID requestId,String digest,String resultId) {
+    void recordIdempotent(long project,String operation,UUID requestId,String digest,String resultId) {
         try {
             jdbc.update("""
                     INSERT INTO repository_idempotent_requests(project_id,requester_id,operation,request_id,param_digest,result_id)
@@ -234,8 +254,11 @@ public class SourceIdentityService {
 
     private List<String> decode(String encoded) {
         try {
+            JsonNode tree=json.readTree(encoded);
+            // H2 的 JSON 列 getString 返回再包一层引号的 JSON 字符串标量（MySQL 返回裸数组文本），拆包一次兼容两端。
+            if (tree!=null && tree.isTextual()) tree=json.readTree(tree.asText());
             List<String> refs=new ArrayList<>();
-            for (JsonNode ref:json.readTree(encoded)) refs.add(ref.asText());
+            if (tree!=null) for (JsonNode ref:tree) refs.add(ref.asText());
             return List.copyOf(refs);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR,e);

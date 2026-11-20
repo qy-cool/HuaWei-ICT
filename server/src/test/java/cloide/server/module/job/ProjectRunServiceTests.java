@@ -42,7 +42,9 @@ class ProjectRunServiceTests {
     void open() {
         JdbcDataSource db = new JdbcDataSource();
         db.setURL("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
-        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V39__create_project_runs.sql")).execute(db);
+        new ResourceDatabasePopulator(
+                new ClassPathResource("db/migration/V39__create_project_runs.sql"),
+                new ClassPathResource("db/migration/V52__project_runs_sweep_index.sql")).execute(db);
         jdbc = new JdbcTemplate(db);
         tx = new TransactionTemplate(new DataSourceTransactionManager(db));
         service = new ProjectRunService(new ProjectRunStore(jdbc), access, clock,
@@ -125,6 +127,32 @@ class ProjectRunServiceTests {
         jdbc.update("UPDATE project_runs SET created_at = ? WHERE job_id = ?", LocalDateTime.now(clock).minusMinutes(31), expired);
         assertTrue(committed(() -> service.next(NODE)).isEmpty());
         assertEquals("cancelled", service.read(PROJECT, expired).status());
+    }
+
+    @Test
+    void staleActiveRunsFallBackToUncertainAndNodeReceiptReconciles() {
+        String id = enqueue();
+        committed(() -> service.next(NODE));
+        service.accepted(NODE, id);
+        // 创建时间回拨越过 35 分钟宽限（30 分钟 deadline + 5 分钟）：活跃作业落 uncertain 终态，
+        // 节点永久离线时这是唯一收敛路径（next() 依赖活会话）。
+        jdbc.update("UPDATE project_runs SET created_at = ? WHERE job_id = ?", LocalDateTime.now(clock).minusMinutes(36), id);
+        service.expireStaleRuns();
+        assertEquals("uncertain", service.read(PROJECT, id).status());
+        // uncertain 是终态：不再阻塞节点的串行队列。
+        assertTrue(committed(() -> service.next(NODE)).isEmpty());
+        // 节点回归后的真实回执覆盖核实。
+        service.finish(NODE, id, "succeeded", 0, "late but true");
+        assertEquals("succeeded", service.read(PROJECT, id).status());
+        assertEquals("late but true", service.read(PROJECT, id).output());
+    }
+
+    @Test
+    void freshActiveRunsAreNotSwept() {
+        String id = enqueue();
+        committed(() -> service.next(NODE));
+        service.expireStaleRuns();
+        assertEquals("dispatched", service.read(PROJECT, id).status());
     }
 
     @Test
