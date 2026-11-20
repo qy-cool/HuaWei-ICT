@@ -2,7 +2,9 @@
 
 Cloide 让企业用一套中控管理项目和 Linux 节点。开发者通过项目 API 提交测试任务，节点主动连接中控，项目成员可按提交和节点查询作业结果。工程底座已有身份认证、监控、告警、可靠消息和 Android 客户端。
 
-[现状盘点与下一轮开发计划](docs/plans/20261112-现状盘点与下一轮开发计划.md) · [项目总体规划](docs/plans/20261112-企业自托管AI软件工程平台总体规划.md) · [工程工作台使用说明](docs/ops-manual/工程工作台接入.md) · [上游组件登记](docs/tech-summary/upstream-components.md) · [开发规范](AGENTS.md)
+本项目的目标是做成**完整、可长期维护的企业级产品**，而不是按赛程裁剪的参赛作品。平台与具体云厂商、模型提供商解耦：企业可按需求选择部署位置，并替换模型、身份、存储和队列等基础设施。华为云是可选的部署与集成方案，也是当前的试验环境之一，不是全部组件的唯一必须实现。定位与证据见[产品定位与价值](docs/intro/product-positioning.md)，部署选项见[部署与基础设施选项](docs/tech-summary/deployment-options.md)。近期开发顺序仍以现状盘点中的 A1–A5 为先。
+
+[现状盘点与下一轮开发计划](docs/plans/20261112-现状盘点与下一轮开发计划.md) · [项目总体规划](docs/plans/20261112-企业自托管AI软件工程平台总体规划.md) · [产品定位与价值](docs/intro/product-positioning.md) · [工程工作台使用说明](docs/ops-manual/工程工作台接入.md) · [上游组件登记](docs/tech-summary/upstream-components.md) · [开发规范](AGENTS.md)
 
 中控 API 可登记内网节点、按项目运行测试、审阅 Pi 改动、接入浏览器 IDE，并观察制品发布和回滚。PostgreSQL、Redis、RabbitMQ 的恢复工具与订单参考工程可独立运行。已验收的环境和仍待交付的能力见[实施与验证记录](docs/logs/20261112-企业平台实施与验证.md)。
 
@@ -38,7 +40,8 @@ scripts/   api-test 端到端回归、OpenAPI 契约校验
 worker/    Pi 编码节点与 IntelliJ Java 符号查询
 examples/  独立的订单业务回归工程
 docs/      plans 产品路线与分阶段计划 / openapi 接口契约 / protocol 协议文档 /
-           logs 开发日志 / ops-manual 运维手册 / competition 历史材料
+           logs 开发日志 / ops-manual 运维手册 / intro 产品介绍 /
+           competition 可选赛事材料适配（不约束架构与路线图）
 .agents/   AI 协作规范（skills/）与架构决策笔记（notes/）
 .github/   CI 工作流、PR 模板、CODEOWNERS
 ```
