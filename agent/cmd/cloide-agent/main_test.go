@@ -1,15 +1,54 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"cloide/agent/internal/collector"
 	"cloide/agent/internal/config"
+	"cloide/agent/internal/syncs"
+	"cloide/agent/internal/wsclient"
 )
+
+func TestSourceSyncDispatchReachesExecutor(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	executed := make(chan syncs.Request, 1)
+	run := func(_ context.Context, req syncs.Request, _ func(string, int64)) syncs.Result {
+		executed <- req
+		return syncs.Result{ID: req.ID, Status: "ready", Commit: req.Commit, Tree: req.Tree, Bundle: req.BundleSHA}
+	}
+	manager, err := syncs.Open(context.Background(), t.TempDir(), "wss://control.example", 2, run,
+		func(context.Context, string, any) error { return nil }, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	want := syncs.Request{
+		ID: "00000000-0000-4000-8000-000000000001", Snapshot: "00000000-0000-4000-8000-000000000002",
+		Project: 1, Repository: 8, Generation: 1, Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40),
+		BundleSHA: strings.Repeat("c", 64), Bytes: 42, Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339),
+	}
+	payload, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle := nodeMessageHandler(nil, nil, nil, manager, logger)
+	handle(context.Background(), wsclient.AgentMessage{Type: "source.sync", Payload: payload})
+	select {
+	case got := <-executed:
+		if got != want {
+			t.Fatalf("executed request = %+v, want %+v", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("source.sync dispatch did not reach the executor")
+	}
+}
 
 type recordingCollector struct {
 	metrics collector.Metrics

@@ -178,6 +178,38 @@ func TestExecutorInstallsVerifiedSnapshot(t *testing.T) {
 	}
 }
 
+func TestExecutorRejectsSnapshotRefPointingToDescendant(t *testing.T) {
+	work := t.TempDir()
+	gitRun(t, work, "init", "-q", "--initial-branch=main", ".")
+	gitRun(t, work, "commit", "--allow-empty", "-qm", "requested commit")
+	commit := gitRun(t, work, "rev-parse", "HEAD")
+	tree := gitRun(t, work, "rev-parse", "HEAD^{tree}")
+	// 第二次提交保留同一棵树，bundle 中仍包含所请求的祖先提交。
+	gitRun(t, work, "commit", "--allow-empty", "-qm", "newer commit")
+	privateRef := "refs/cloide/snapshots/" + testSnapshot
+	gitRun(t, work, "update-ref", privateRef, "HEAD")
+	bundlePath := filepath.Join(work, "bundle.git")
+	gitRun(t, work, "bundle", "create", bundlePath, privateRef)
+	data, err := os.ReadFile(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	control := &fakeControl{bundle: data, commit: commit, tree: tree}
+	server := httptest.NewServer(control.handler(t))
+	defer server.Close()
+	root := t.TempDir()
+	executor := NewExecutor(server.URL, "node-token", 2, root)
+	result := executor.Execute(context.Background(), dispatchRequest(commit, tree, sha256Of(data), int64(len(data))),
+		func(string, int64) {})
+	if result.Status != "failed" || !strings.HasPrefix(result.Output, "verification failed:") {
+		t.Errorf("expected snapshot ref verification failure, got %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "1", "8", testSnapshot)); !os.IsNotExist(err) {
+		t.Errorf("expected no published snapshot, stat error = %v", err)
+	}
+}
+
 func TestExecutorResumesInterruptedTransferWithRange(t *testing.T) {
 	// A2-01 半包与凭据过期：首次下载中途断链，重试领取新授权并按 Range 续传，
 	// 最终只有一个 ready 目录；续传起点与首次已送达字节数一致。
