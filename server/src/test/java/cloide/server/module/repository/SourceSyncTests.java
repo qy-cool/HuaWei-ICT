@@ -8,8 +8,12 @@ import cloide.server.common.ErrorCode;
 import cloide.server.module.project.service.NodeCapabilities;
 import cloide.server.module.project.service.ProjectAccess;
 import cloide.server.security.AuthenticatedUser;
+import cloide.server.websocket.AgentConnectionRegistry;
+import cloide.server.websocket.AgentMessage;
+import cloide.server.websocket.AgentWebSocketSession;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -30,11 +34,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.socket.TextMessage;
 
 /**
  * A2 节点源码同步：H2 + 回环 GitHub 夹具 + 真实本地 Git 对象库，覆盖创建幂等与
@@ -212,6 +218,75 @@ class SourceSyncTests {
                 ()->service.finish(2,view.syncId(),"ready","0".repeat(40),treeSha,null,"installed"));
         assertThrows(BusinessException.class,
                 ()->service.finish(2,view.syncId(),"failed",null,null,null,"late divergence"));
+    }
+
+    @Test void failedReceiptGetsAcknowledgedAgainAfterFirstAckIsLost() throws Exception {
+        var view = createSync();
+        service.prepareNext();
+        service.next(2).orElseThrow();
+
+        var connections = mock(AgentConnectionRegistry.class);
+        var session = mock(AgentWebSocketSession.class);
+        when(connections.isCurrent(session)).thenReturn(true);
+        when(session.supportsSourceSync()).thenReturn(true);
+        when(session.serverId()).thenReturn(2L);
+        when(session.send(any(TextMessage.class))).thenThrow(new IOException("connection closed")).thenReturn(true);
+        var handler = new SourceSyncChannel(service, connections, json, Clock.systemUTC());
+        // Go 节点省略尚未验证的三个摘要；长错误说明在数据库中只保留前 64 个字符。
+        String output = "digest_mismatch: got sha=" + "a".repeat(64) + " bytes=512";
+        var payload = json.createObjectNode().put("sync_id", view.syncId())
+                .put("status", "failed").put("output", output);
+        var result = new AgentMessage("source.sync.result", UUID.randomUUID().toString(),
+                Clock.systemUTC().instant().toString(), payload);
+
+        assertThrows(IOException.class, () -> handler.handle(session, result));
+        var first = service.read(1, view.syncId());
+        assertEquals("failed", first.state());
+        assertEquals(output.substring(0, 64), first.lastError());
+
+        handler.handle(session, result);
+        var acks = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, times(2)).send(acks.capture());
+        var ack = json.readValue(acks.getValue().getPayload(), AgentMessage.class);
+        assertEquals("source.sync.result.ack", ack.type());
+        assertEquals(view.syncId(), ack.payload().path("sync_id").asText());
+        assertEquals(first, service.read(1, view.syncId()));
+    }
+
+    @Test void failedReplayPreservesFirstResultAndChecksNodeAndEvidence() {
+        var view = createSync();
+        service.prepareNext();
+        service.next(2).orElseThrow();
+        String id = view.syncId();
+        String output = "capacity: insufficient space";
+        service.finish(2, id, "failed", null, null, null, output);
+        var first = service.read(1, id);
+        assertEquals(ErrorCode.RESOURCE_NOT_FOUND, assertThrows(BusinessException.class,
+                () -> service.finish(9, id, "failed", null, null, null, output)).getErrorCode());
+        assertEquals(ErrorCode.RESOURCE_CONFLICT, assertThrows(BusinessException.class,
+                () -> service.finish(2, id, "failed", null, null, null, "transfer failed")).getErrorCode());
+        assertEquals(ErrorCode.RESOURCE_CONFLICT, assertThrows(BusinessException.class,
+                () -> service.finish(2, id, "failed", commitSha, treeSha, "0".repeat(64), output)).getErrorCode());
+        assertEquals(ErrorCode.RESOURCE_CONFLICT, assertThrows(BusinessException.class,
+                () -> service.finish(2, id, "ready", commitSha, treeSha, first.bundleSha256(), "installed")).getErrorCode());
+        // 保留已有的完整摘要重放路径。
+        service.finish(2, id, "failed", commitSha, treeSha, first.bundleSha256(), output);
+        assertEquals(first, service.read(1, id));
+    }
+
+    @Test void failedReplayHandlesACharacterSplitAtTheStorageLimit() {
+        var view = createSync();
+        service.prepareNext();
+        String prefix = "x".repeat(63);
+        String output = prefix + "📁/orders";
+        String id = view.syncId();
+        service.finish(2, id, "failed", null, null, null, output);
+        assertEquals(prefix, service.read(1, id).lastError());
+        service.finish(2, id, "failed", null, null, null, output);
+        // 历史 UTF-8 记录可能已将孤立代理字符替换为问号。
+        jdbc.update("UPDATE source_syncs SET last_error = ? WHERE sync_id = ?", prefix + "?", id);
+        service.finish(2, id, "failed", null, null, null, output);
+        assertEquals(prefix + "?", service.read(1, id).lastError());
     }
 
     @Test void wrongNodeCannotClaimGrantOrFinish() {
