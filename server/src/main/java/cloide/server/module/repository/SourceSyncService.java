@@ -21,6 +21,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -201,6 +202,7 @@ public class SourceSyncService {
     }
 
     /** 节点终态回执：ready 必须携带与派发一致的三个摘要；uncertain 可被真实回执覆盖。 */
+    @Transactional
     public void finish(long serverId, String syncId, String status, String commitSha, String treeSha,
             String bundleSha256, String output) {
         if (status == null || !SourceSync.TERMINAL.contains(status) || output == null || output.length() > 512) {
@@ -214,25 +216,32 @@ public class SourceSyncService {
                 throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
             }
         }
-        if (sync.status().equals("uncertain")) {
-            // 服务端超时兜底标记的 uncertain 允许被节点真实回执覆盖核实。
-            store.complete(sync.syncId(), status,
-                    output != null && output.length() > 64 ? output.substring(0, 64) : output,
-                    LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
+        String summary = output.substring(0, Math.min(output.length(), 64));
+        if (output.length() > 64 && Character.isSurrogatePair(output.charAt(63), output.charAt(64))) {
+            summary = output.substring(0, 63);
+        }
+        if (sync.terminal() && !"uncertain".equals(sync.status())) {
+            if (!sync.status().equals(status)) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
+            if ("failed".equals(status)) {
+                // Go 节点在核验失败时省略全部摘要；重放时与首次落库的错误摘要对账。
+                boolean sameFailure = sync.bundleSha256() != null && commitSha == null && treeSha == null
+                        && bundleSha256 == null && matchesFailureSummary(sync.lastError(), summary, output);
+                boolean sameDigests = Objects.equals(sync.commitSha(), commitSha)
+                        && Objects.equals(sync.treeSha(), treeSha) && Objects.equals(sync.bundleSha256(), bundleSha256);
+                if (!sameFailure && !sameDigests) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
+            }
             return;
         }
-        if (sync.terminal()) {
-            // 解绑后已 cancelled 的同步允许节点再报 cancelled，避免并发回执被误判冲突。
-            if ("cancelled".equals(sync.status()) && "cancelled".equals(status)) return;
-            boolean same = sync.status().equals(status)
-                    && Objects.equals(sync.commitSha(), commitSha) && Objects.equals(sync.treeSha(), treeSha)
-                    && Objects.equals(sync.bundleSha256(), bundleSha256);
-            if (!same) throw new BusinessException(ErrorCode.RESOURCE_CONFLICT);
-            return;
-        }
-        // failed/cancelled：保留节点给出的有界说明作为最后错误。
-        store.complete(sync.syncId(), status, output.length() > 64 ? output.substring(0, 64) : output,
-                LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
+        // 超时兜底的 uncertain 允许由节点的实际结果覆盖。
+        store.complete(sync.syncId(), status, summary, LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
+    }
+
+    private static boolean matchesFailureSummary(String stored, String summary, String output) {
+        if (summary.equals(stored)) return true;
+        // 旧记录可能把截断在第 64 位的半个代理对原样保存，或在 UTF-8 写入时保存为替换字符。
+        if (output.length() <= 64 || summary.length() != 63) return false;
+        return output.substring(0, 64).equals(stored) || (summary + "?").equals(stored)
+                || (summary + "\uFFFD").equals(stored);
     }
 
     /**
