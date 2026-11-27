@@ -32,6 +32,8 @@
 | `source.sync.result` | Agent | `sync_id, status, verified_commit_sha, verified_tree_sha, verified_bundle_sha256, output`。状态为 `ready`、`failed`、`cancelled` 或 `uncertain`。`ready` 必须携带与派发一致的三个摘要；`failed` 的 output 携带有界错误说明（如容量不足、摘要不符）。 |
 | `source.sync.result.ack` | 中控 | `sync_id`。中控须先保存终态再发确认。Agent 停止主动重发，保留记录供重复派发对账。 |
 
+节点同步失败时可省略全部三个核验摘要。若首次确认丢失，同一节点重发该任务的失败回执，中控按首次保存的错误说明前缀核对，再次发送确认并保留首次记录。前缀最多占 64 个 UTF-16 代码单元，截断时保留完整字符。成功回执仍须核对全部三个摘要。
+
 **下载与授权。** 节点用自身节点凭据（`X-Agent-Token`，与制品上传相同）调用 `POST /api/source-agent/syncs/{syncId}/grant?serverId=…` 领取绑定该同步、该节点、绑定代次与有效期的短期授权，响应一次性返回授权 ID、43 位密钥及全部下载事实。之后以 `GET /api/source-agent/syncs/{syncId}/content` 下载 bundle，每次请求同时出示节点凭据与 `X-Sync-Grant: grantId.secret`，支持 `Range` 断点续传；授权过期或被撤时重新领取。中控每次下载请求重查撤权与期限，日志只记授权 ID、时间与结果，不落密钥。节点凭据与短期授权都不写入同步账本、安装目录或日志。
 
 **原子安装与重放。** 节点按 `(project_id, repository_id, snapshot_id)` 在管理员配置的同步根目录下分目录，在同一文件系统的临时目录完成 bundle 导入与对象核验，再原子更名为就绪目录；就绪目录保留一个私有 ref 指向该提交。相同 `sync_id` 且相同信封摘要（commit、tree、bundle、代次）的重复送达直接查账返回原结果；同 ID 换 SHA、目录或代次记录冲突并拒绝执行。局部失败仅清理该操作拥有的临时目录，就绪的旧快照不受影响。不同提交、同一仓库不同项目的对象分开存储。安装结果由 `(节点, 快照, 绑定代次)` 唯一确认。
